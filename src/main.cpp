@@ -3,6 +3,8 @@
 #include "core/Window.h"
 #include "game/Player.h"
 #include "game/Projectile.h"
+#include "game/Scene.h"
+#include "game/SettingsMenu.h"
 #include "game/Weapon.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
@@ -11,6 +13,7 @@
 #include "render/Model.h"
 #include "render/PostFx.h"
 #include "render/Shader.h"
+#include "render/Text.h"
 #include "render/Texture.h"
 
 #include <glad/gl.h>
@@ -132,6 +135,16 @@ int main() {
         }
         hud.healthBar().fraction = 0.62f;
 
+        render::Text text;
+        if (!text.init("assets/shaders/text.vert",
+                       "assets/shaders/text.frag")) {
+            return 1;
+        }
+
+        game::SettingsMenu settingsMenu;
+        game::Scene scene = game::Scene::Playing;
+        bool prevEscape = false;
+
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
         while (!window.shouldClose()) {
@@ -140,12 +153,42 @@ int main() {
             time.tick();
             float dt = time.dt();
 
-            if (input.key(GLFW_KEY_ESCAPE)) break;
+            // Escape edge-toggles the settings overlay; it no longer quits.
+            const bool curEscape = input.key(GLFW_KEY_ESCAPE);
+            if (curEscape && !prevEscape) {
+                scene = (scene == game::Scene::Playing)
+                          ? game::Scene::Settings
+                          : game::Scene::Playing;
+                glfwSetInputMode(window.handle(), GLFW_CURSOR,
+                                 scene == game::Scene::Settings
+                                   ? GLFW_CURSOR_NORMAL
+                                   : GLFW_CURSOR_DISABLED);
+                input.resetMouseDelta();
+            }
+            prevEscape = curEscape;
 
-            player.update(dt, input, time.total());
-            weapon.update(dt, input, player);
+            // Apply settings to the player camera every frame. The slider value
+            // is horizontal FOV; convert to vertical FOV for glm::perspective.
+            {
+                const float aspect = window.aspect();
+                const float hFovRad =
+                    glm::radians(settingsMenu.settings().hFovDeg);
+                const float vFovRad =
+                    2.0f * std::atan(std::tan(hFovRad * 0.5f) / std::max(aspect, 0.001f));
+                player.camera().fovDeg = glm::degrees(vFovRad);
+            }
+
+            if (scene == game::Scene::Playing) {
+                player.update(dt, input, time.total());
+                weapon.update(dt, input, player);
+            } else {
+                settingsMenu.update(dt, input, window.width(), window.height());
+            }
             const render::Camera& cam = player.camera();
 
+            // Projectile spawn / advance only run while playing; the menu pauses
+            // the world.
+            if (scene == game::Scene::Playing) {
             // Spawn a projectile on the fire frame.
             if (weapon.firedThisFrame()) {
                 glm::vec3 fwd   = cam.forward();
@@ -170,6 +213,7 @@ int main() {
                 std::remove_if(projectiles.begin(), projectiles.end(),
                                [](const game::Projectile& p){ return !p.alive(); }),
                 projectiles.end());
+            }  // end Playing-scene gate
 
             // Keep the scene FBO matched to the window size.
             sceneFbo.resize(window.width(), window.height());
@@ -252,9 +296,13 @@ int main() {
                          time.total(),
                          postFx.params());
 
-            hud.drawHealthBar(window.width(), window.height(), time.total(),
-                              hud.healthBar());
-            hud.drawCrosshair(window.width(), window.height(), hud.crosshair());
+            if (scene == game::Scene::Playing) {
+                hud.drawHealthBar(window.width(), window.height(), time.total(),
+                                  hud.healthBar());
+                hud.drawCrosshair(window.width(), window.height(), hud.crosshair());
+            } else {
+                settingsMenu.draw(hud, text, window.width(), window.height());
+            }
 
             window.swap();
         }

@@ -128,6 +128,24 @@ void Hud::drawHealthBar(int targetW, int targetH, float timeSeconds,
              fillColor, p.emptyColor, p.borderColor, p.borderPx, pulse, p.opacity);
 }
 
+void Hud::drawRect(int W, int H, const glm::vec2& origin, const glm::vec2& size,
+                   const glm::vec3& color, float opacity) {
+    drawBar_(W, H, origin, size, /*fill=*/1.0f, /*segments=*/0,
+             color, color, color, /*borderPx=*/0.0f, /*pulse=*/0.0f, opacity);
+}
+
+void Hud::drawProgress(int W, int H,
+                       const glm::vec2& origin, const glm::vec2& size,
+                       float fill,
+                       const glm::vec3& fillColor,
+                       const glm::vec3& emptyColor,
+                       const glm::vec3& borderColor,
+                       float borderPx,
+                       float opacity) {
+    drawBar_(W, H, origin, size, fill, /*segments=*/0,
+             fillColor, emptyColor, borderColor, borderPx, /*pulse=*/0.0f, opacity);
+}
+
 void Hud::drawAmmo(int targetW, int targetH, const AmmoParams& p) {
     const int   segments = std::max(p.capacity, 1);
     const int   current  = std::clamp(p.current, 0, segments);

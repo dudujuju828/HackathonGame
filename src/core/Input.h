@@ -15,6 +15,13 @@ public:
     float mouseDX() const { return dx_; }
     float mouseDY() const { return dy_; }
 
+    double mouseX() const { return lastX_; }
+    double mouseY() const { return lastY_; }
+
+    // Discards the next mouse delta. Call this when toggling cursor lock so
+    // the Player doesn't get yanked by a stale absolute jump.
+    void resetMouseDelta() { firstSample_ = true; dx_ = dy_ = 0.0f; }
+
 private:
     GLFWwindow* window_ = nullptr;
     double lastX_ = 0.0;

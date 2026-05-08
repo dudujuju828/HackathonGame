@@ -60,6 +60,20 @@ public:
                         const HealthBarParams& p);
     void drawAmmo      (int targetW, int targetH, const AmmoParams& p);
 
+    // General-purpose bar primitive (used by health/ammo internally; also
+    // exposed for menu sliders, panels, etc.).
+    void drawRect      (int targetW, int targetH,
+                        const glm::vec2& origin, const glm::vec2& size,
+                        const glm::vec3& color, float opacity);
+    void drawProgress  (int targetW, int targetH,
+                        const glm::vec2& origin, const glm::vec2& size,
+                        float fill,
+                        const glm::vec3& fillColor,
+                        const glm::vec3& emptyColor,
+                        const glm::vec3& borderColor,
+                        float borderPx,
+                        float opacity);
+
     CrosshairParams& crosshair() { return crosshair_; }
     HealthBarParams& healthBar() { return healthBar_; }
     AmmoParams&      ammo()      { return ammo_; }

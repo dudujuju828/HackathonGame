@@ -84,6 +84,7 @@ void Shader::use() const { glUseProgram(program_); }
 void Shader::setInt  (const char* n, int v) const             { glUniform1i (glGetUniformLocation(program_, n), v); }
 void Shader::setFloat(const char* n, float v) const           { glUniform1f (glGetUniformLocation(program_, n), v); }
 void Shader::setVec3 (const char* n, const glm::vec3& v) const{ glUniform3fv(glGetUniformLocation(program_, n), 1, glm::value_ptr(v)); }
+void Shader::setVec4 (const char* n, const glm::vec4& v) const{ glUniform4fv(glGetUniformLocation(program_, n), 1, glm::value_ptr(v)); }
 void Shader::setMat4 (const char* n, const glm::mat4& m) const{ glUniformMatrix4fv(glGetUniformLocation(program_, n), 1, GL_FALSE, glm::value_ptr(m)); }
 
 }  // namespace render
