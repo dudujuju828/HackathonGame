@@ -8,6 +8,7 @@
 #include <stb_image.h>
 
 #include <glm/geometric.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
 #include <cctype>
@@ -331,6 +332,106 @@ bool Model::loadGLB_(const std::string& path) {
 
             meshes_.push_back(std::move(mm));
         }
+    }
+
+    // Parse Skeleton
+    skeleton_ = std::nullopt;
+    std::unordered_map<const cgltf_node*, int> nodeToJoint;
+    if (data->skins_count > 0) {
+        const cgltf_skin& skin = data->skins[0];
+        Skeleton skel;
+        skel.joints.resize(skin.joints_count);
+
+        for (cgltf_size i = 0; i < skin.joints_count; ++i) {
+            nodeToJoint[skin.joints[i]] = static_cast<int>(i);
+        }
+
+        for (cgltf_size i = 0; i < skin.joints_count; ++i) {
+            const cgltf_node* node = skin.joints[i];
+            Joint& j = skel.joints[i];
+            if (node->name) j.name = node->name;
+
+            if (node->parent && nodeToJoint.find(node->parent) != nodeToJoint.end()) {
+                j.parentIndex = nodeToJoint[node->parent];
+            } else {
+                j.parentIndex = -1;
+            }
+
+            if (skin.inverse_bind_matrices) {
+                cgltf_accessor_read_float(skin.inverse_bind_matrices, i, glm::value_ptr(j.inverseBindMatrix), 16);
+            }
+
+            if (node->has_translation) {
+                j.translation = glm::vec3(node->translation[0], node->translation[1], node->translation[2]);
+            }
+            if (node->has_rotation) {
+                j.rotation = glm::quat(node->rotation[3], node->rotation[0], node->rotation[1], node->rotation[2]);
+            }
+            if (node->has_scale) {
+                j.scale = glm::vec3(node->scale[0], node->scale[1], node->scale[2]);
+            }
+        }
+        skeleton_ = std::move(skel);
+    }
+
+    // Parse Animations
+    animations_.clear();
+    for (cgltf_size a = 0; a < data->animations_count; ++a) {
+        const cgltf_animation& anim = data->animations[a];
+        AnimationClip clip;
+        if (anim.name) clip.name = anim.name;
+
+        float maxTime = 0.0f;
+
+        for (cgltf_size c = 0; c < anim.channels_count; ++c) {
+            const cgltf_animation_channel& chan = anim.channels[c];
+            if (!chan.target_node) continue;
+
+            auto it = nodeToJoint.find(chan.target_node);
+            if (it == nodeToJoint.end()) continue;
+
+            int jointIdx = it->second;
+
+            AnimationChannel* ourChan = nullptr;
+            for (auto& ch : clip.channels) {
+                if (ch.targetJoint == jointIdx) {
+                    ourChan = &ch; break;
+                }
+            }
+            if (!ourChan) {
+                clip.channels.push_back({jointIdx, {}, {}, {}});
+                ourChan = &clip.channels.back();
+            }
+
+            const cgltf_animation_sampler* samp = chan.sampler;
+            if (!samp || !samp->input || !samp->output) continue;
+
+            const cgltf_accessor* timeAcc = samp->input;
+            const cgltf_accessor* valAcc = samp->output;
+
+            for (cgltf_size k = 0; k < timeAcc->count; ++k) {
+                float t = 0.0f;
+                cgltf_accessor_read_float(timeAcc, k, &t, 1);
+                maxTime = std::max(maxTime, t);
+
+                if (chan.target_path == cgltf_animation_path_type_translation) {
+                    glm::vec3 v;
+                    cgltf_accessor_read_float(valAcc, k, glm::value_ptr(v), 3);
+                    ourChan->translations.push_back({t, v});
+                } else if (chan.target_path == cgltf_animation_path_type_rotation) {
+                    float v[4];
+                    cgltf_accessor_read_float(valAcc, k, v, 4);
+                    // cgltf rotation is [x, y, z, w], glm::quat is (w, x, y, z)
+                    ourChan->rotations.push_back({t, glm::quat(v[3], v[0], v[1], v[2])});
+                } else if (chan.target_path == cgltf_animation_path_type_scale) {
+                    glm::vec3 v;
+                    cgltf_accessor_read_float(valAcc, k, glm::value_ptr(v), 3);
+                    ourChan->scales.push_back({t, v});
+                }
+            }
+        }
+        clip.duration = maxTime;
+        animations_.push_back(std::move(clip));
     }
 
     cgltf_free(data);
