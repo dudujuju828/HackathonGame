@@ -4,13 +4,16 @@
 
 #include <glm/glm.hpp>
 
+#include <vector>
+
 namespace core   { class Input; }
 namespace render { class Hud; class Text; }
 
 namespace game {
 
-// Modal in-game settings overlay. Owns the slider drag state and FOV value.
-// main constructs one and calls update + draw while in Scene::Settings.
+// Modal in-game settings overlay. Renders one or more sliders bound to
+// fields on Settings; main constructs one and calls update + draw while
+// the scene is Settings.
 class SettingsMenu {
 public:
     void update(float dt, const core::Input& input, int targetW, int targetH);
@@ -23,14 +26,22 @@ public:
     const Settings& settings() const { return settings_; }
 
 private:
-    // Slider geometry in window pixels — recomputed each frame from screen
-    // size so the menu adapts to resizes.
-    struct SliderRect { float x0, y0, x1, y1; };
-    SliderRect fovTrack_(int W, int H) const;
+    struct SliderDef {
+        const char* label;
+        float*      value;        // points into settings_
+        float       min;
+        float       max;
+        float       yOffsetPx;    // track Y from top of the panel
+    };
 
-    Settings settings_ {};
-    bool     dragging_  = false;
-    bool     prevMouse_ = false;
+    struct TrackRect { float x0, y0, x1, y1; };
+
+    void      buildSliders_(std::vector<SliderDef>& out);
+    TrackRect trackOf_(int W, int H, const SliderDef& s) const;
+
+    Settings settings_   {};
+    int      draggingIdx_ = -1;   // -1 = none
+    bool     prevMouse_   = false;
 };
 
 }  // namespace game

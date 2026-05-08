@@ -227,8 +227,14 @@ int main() {
             worldShader.setVec3 ("uCamPos", cam.position);
             worldShader.setVec3 ("uCamDir", cam.forward());
             worldShader.setVec3 ("uAmbient", glm::vec3(0.04f));
-            worldShader.setFloat("uFlashInner", glm::cos(glm::radians(12.0f)));
-            worldShader.setFloat("uFlashOuter", glm::cos(glm::radians(20.0f)));
+            {
+                const float outerDeg = settingsMenu.settings().flashlightDeg;
+                const float innerDeg = outerDeg * 0.6f;  // hot core ~60% of outer
+                worldShader.setFloat("uFlashInner",
+                                     glm::cos(glm::radians(innerDeg)));
+                worldShader.setFloat("uFlashOuter",
+                                     glm::cos(glm::radians(outerDeg)));
+            }
             worldShader.setVec3 ("uFlashColor", glm::vec3(1.2f, 1.15f, 1.0f));
 
             // A small grid of cubes to wander around.
