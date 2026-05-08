@@ -123,7 +123,11 @@ void Hud::drawHealthBar(int targetW, int targetH, float timeSeconds,
     glm::vec3 fillColor = glm::mix(p.colorFull, p.colorCritical, critness);
     float pulse = (std::sin(timeSeconds * 8.0f) * 0.5f + 0.5f) * critness * 0.5f;
 
-    glm::vec2 origin { p.marginPx.x, p.marginPx.y };
+    // marginPx is "from bottom-left of screen"; convert to top-left origin.
+    glm::vec2 origin {
+        p.marginPx.x,
+        static_cast<float>(targetH) - p.marginPx.y - p.sizePx.y
+    };
     drawBar_(targetW, targetH, origin, p.sizePx, frac, /*segments=*/0,
              fillColor, p.emptyColor, p.borderColor, p.borderPx, pulse, p.opacity);
 }
@@ -151,9 +155,10 @@ void Hud::drawAmmo(int targetW, int targetH, const AmmoParams& p) {
     const int   current  = std::clamp(p.current, 0, segments);
     const float frac     = static_cast<float>(current) / static_cast<float>(segments);
 
+    // marginPx is "from bottom-right of screen"; convert to top-left origin.
     glm::vec2 origin {
         static_cast<float>(targetW) - p.marginPx.x - p.sizePx.x,
-        p.marginPx.y
+        static_cast<float>(targetH) - p.marginPx.y - p.sizePx.y
     };
     drawBar_(targetW, targetH, origin, p.sizePx, frac, segments,
              p.fillColor, p.emptyColor, p.borderColor, p.borderPx, 0.0f, p.opacity);

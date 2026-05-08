@@ -15,7 +15,10 @@ uniform float uOpacity;
 out vec4 FragColor;
 
 void main() {
-    vec2 p = gl_FragCoord.xy - uOrigin.xy;
+    // gl_FragCoord is bottom-left origin; we expose a top-left coord
+    // system so HUD layout matches GLFW mouse and the text shader.
+    vec2 fragTL = vec2(gl_FragCoord.x, uResolution.y - gl_FragCoord.y);
+    vec2 p  = fragTL - uOrigin.xy;
     vec2 sz = uSize.xy;
 
     // Outside outer (border-inclusive) box -> nothing to draw.
