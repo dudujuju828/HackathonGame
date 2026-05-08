@@ -182,8 +182,15 @@ int main() {
                 player.update(dt, input, time.total());
                 weapon.update(dt, input, player);
             } else {
-                settingsMenu.update(dt, input, window.width(), window.height());
+                game::MenuAction action =
+                    settingsMenu.update(dt, input,
+                                        window.width(), window.height());
+                if (action == game::MenuAction::ExitGame) break;
             }
+
+            // Apply fullscreen toggle each frame (cheap if already in state).
+            window.setFullscreen(settingsMenu.settings().fullscreen);
+
             const render::Camera& cam = player.camera();
 
             // Projectile spawn / advance only run while playing; the menu pauses

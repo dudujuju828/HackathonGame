@@ -8,6 +8,7 @@ namespace game {
 struct Settings {
     float hFovDeg       = 100.0f;  // horizontal FOV (deg)
     float flashlightDeg = 20.0f;   // flashlight outer-cone half-angle (deg)
+    bool  fullscreen    = false;
 };
 
 }  // namespace game

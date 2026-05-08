@@ -11,36 +11,52 @@ namespace render { class Hud; class Text; }
 
 namespace game {
 
-// Modal in-game settings overlay. Renders one or more sliders bound to
-// fields on Settings; main constructs one and calls update + draw while
-// the scene is Settings.
+// Discrete actions the menu can hand back to main on a given frame.
+enum class MenuAction {
+    None,
+    ExitGame,
+};
+
 class SettingsMenu {
 public:
-    void update(float dt, const core::Input& input, int targetW, int targetH);
+    // Returns any one-shot action triggered this frame (e.g. exit pressed).
+    MenuAction update(float dt, const core::Input& input,
+                      int targetW, int targetH);
 
-    // Caller is responsible for binding the destination framebuffer
-    // (typically the default after the post-process pass).
-    void draw(render::Hud& hud, render::Text& text, int targetW, int targetH);
+    void draw(render::Hud& hud, render::Text& text,
+              int targetW, int targetH);
 
     Settings&       settings()       { return settings_; }
     const Settings& settings() const { return settings_; }
 
 private:
-    struct SliderDef {
+    struct Item {
+        enum class Kind { Slider, Toggle, Button };
+
+        Kind        kind;
         const char* label;
-        float*      value;        // points into settings_
-        float       min;
-        float       max;
-        float       yOffsetPx;    // track Y from top of the panel
+        float       yOffsetPx;     // y position from panel top
+
+        // Slider only.
+        float*      sliderValue = nullptr;
+        float       sliderMin   = 0.0f;
+        float       sliderMax   = 1.0f;
+
+        // Toggle only.
+        bool*       toggleValue = nullptr;
+
+        // Button only.
+        MenuAction  action      = MenuAction::None;
     };
 
-    struct TrackRect { float x0, y0, x1, y1; };
+    struct Rect { float x0, y0, x1, y1; };
 
-    void      buildSliders_(std::vector<SliderDef>& out);
-    TrackRect trackOf_(int W, int H, const SliderDef& s) const;
+    void  buildItems_(std::vector<Item>& out);
+    Rect  hitRect_(int W, int H, const Item& it) const;
+    Rect  trackRect_(int W, int H, const Item& it) const;
 
     Settings settings_   {};
-    int      draggingIdx_ = -1;   // -1 = none
+    int      draggingIdx_ = -1;   // active slider; -1 = none
     bool     prevMouse_   = false;
 };
 

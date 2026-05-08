@@ -77,4 +77,25 @@ void Window::pollEvents() {
     glfwPollEvents();
 }
 
+void Window::setFullscreen(bool fs) {
+    if (fs == fullscreen_) return;
+
+    if (fs) {
+        glfwGetWindowPos (window_, &windowedX_, &windowedY_);
+        glfwGetWindowSize(window_, &windowedW_, &windowedH_);
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        if (!monitor) return;
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        glfwSetWindowMonitor(window_, monitor,
+                             0, 0, mode->width, mode->height,
+                             mode->refreshRate);
+    } else {
+        glfwSetWindowMonitor(window_, nullptr,
+                             windowedX_, windowedY_,
+                             windowedW_, windowedH_,
+                             GLFW_DONT_CARE);
+    }
+    fullscreen_ = fs;
+}
+
 }  // namespace core
