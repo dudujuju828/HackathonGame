@@ -16,7 +16,7 @@ struct WalkFeel {
     // Step bob — head bobs vertically every step, sways laterally every other.
     float bobAmpY     = 0.045f;   // m
     float bobAmpX     = 0.025f;   // m
-    float bobStepRate = 1.3f;     // steps per meter walked
+    float bobStepRate = 0.35f;    // steps per meter walked (slow, horror cadence)
     float bobBlend    = 8.0f;     // 1/s smoothing for fade in/out
 
     // Idle view shake — tiny constant breath wobble on yaw/pitch.
