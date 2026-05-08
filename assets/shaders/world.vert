@@ -26,9 +26,8 @@ void main() {
         boneTransform     += uBones[aBoneIds[2]] * aBoneWeights[2];
         boneTransform     += uBones[aBoneIds[3]] * aBoneWeights[3];
 
-        // DEBUG BYPASS: See if the mesh renders at all without skinning
-        localPos = vec4(aPos, 1.0); // boneTransform * vec4(aPos, 1.0);
-        localNormal = aNormal;      // mat3(boneTransform) * aNormal;
+        localPos = boneTransform * vec4(aPos, 1.0);
+        localNormal = mat3(boneTransform) * aNormal;
     } else {
         localPos = vec4(aPos, 1.0);
         localNormal = aNormal;
