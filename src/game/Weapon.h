@@ -36,7 +36,9 @@ public:
 
     int   ammo          = 6;
     int   capacity      = 6;
-    float fireRate      = 0.85f;  // seconds between shots
+    bool  unlimited     = false;  // true: ignore ammo, fire forever
+    bool  autoFire      = false;  // true: holding the button keeps firing
+    float fireRate      = 0.85f;  // seconds between shots (caps shots/sec)
     float traumaPerShot = 0.45f;
 
     ViewmodelTransform viewmodel {};

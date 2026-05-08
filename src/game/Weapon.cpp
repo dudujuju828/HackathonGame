@@ -24,8 +24,10 @@ bool Weapon::update(float dt, const core::Input& input, Player& player) {
     const bool justClicked = click && !prevClick_;
     prevClick_ = click;
 
-    if (justClicked && cooldown_ <= 0.0f && ammo > 0) {
-        ammo      -= 1;
+    const bool fireTrigger = autoFire ? click : justClicked;
+
+    if (fireTrigger && cooldown_ <= 0.0f && (unlimited || ammo > 0)) {
+        if (!unlimited) ammo -= 1;
         cooldown_  = fireRate;
         kickback_  = 1.0f;
         player.addTrauma(traumaPerShot);

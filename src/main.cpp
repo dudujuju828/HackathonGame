@@ -106,8 +106,9 @@ int main() {
 
         game::Weapon weapon;
         weapon.setModel(&syringeModel);
-        weapon.capacity = 6;
-        weapon.ammo     = 6;
+        weapon.unlimited = true;
+        weapon.autoFire  = true;
+        weapon.fireRate  = 0.2f;   // 5 shots/sec cap
         weapon.viewmodel.scale = 0.05f;
 
         std::vector<game::Projectile> projectiles;
@@ -247,12 +248,8 @@ int main() {
                          time.total(),
                          postFx.params());
 
-            hud.ammo().current  = weapon.ammo;
-            hud.ammo().capacity = weapon.capacity;
-
             hud.drawHealthBar(window.width(), window.height(), time.total(),
                               hud.healthBar());
-            hud.drawAmmo     (window.width(), window.height(), hud.ammo());
             hud.drawCrosshair(window.width(), window.height(), hud.crosshair());
 
             window.swap();
