@@ -10,3 +10,4 @@ out/
 *.pdb
 *.ilk
 CMakeUserPresets.json
+.claude
