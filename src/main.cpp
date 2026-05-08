@@ -1,6 +1,7 @@
 #include "core/Input.h"
 #include "core/Time.h"
 #include "core/Window.h"
+#include "game/Player.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
 #include "render/Hud.h"
@@ -90,10 +91,8 @@ int main() {
         auto px = makeChecker(64, 220, 220, 220, 60, 60, 60);
         checker.createRGBA(64, 64, px.data(), /*nearest=*/true);
 
-        render::Camera cam;
-        cam.position = {0.0f, 1.6f, 3.0f};
-
-        const float moveSpeed = 4.0f;
+        game::Player player;
+        player.setSpawn({ 0.0f, 0.0f, 3.0f });
 
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
@@ -123,22 +122,8 @@ int main() {
 
             if (input.key(GLFW_KEY_ESCAPE)) break;
 
-            cam.addLook(input.mouseDX(), input.mouseDY());
-
-            glm::vec3 fwd = cam.forward();
-            fwd.y = 0.0f;
-            if (glm::length(fwd) > 0.0001f) fwd = glm::normalize(fwd);
-            glm::vec3 rt = glm::normalize(glm::cross(fwd, glm::vec3(0,1,0)));
-
-            glm::vec3 wish(0.0f);
-            if (input.key(GLFW_KEY_W)) wish += fwd;
-            if (input.key(GLFW_KEY_S)) wish -= fwd;
-            if (input.key(GLFW_KEY_D)) wish += rt;
-            if (input.key(GLFW_KEY_A)) wish -= rt;
-            if (glm::length(wish) > 0.0001f) {
-                wish = glm::normalize(wish) * moveSpeed * dt;
-                cam.position += wish;
-            }
+            player.update(dt, input, time.total());
+            const render::Camera& cam = player.camera();
 
             // Keep the scene FBO matched to the window size.
             sceneFbo.resize(window.width(), window.height());

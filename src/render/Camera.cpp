@@ -14,10 +14,12 @@ void Camera::addLook(float dxPixels, float dyPixels, float sensitivity) {
 }
 
 glm::vec3 Camera::forward() const {
-    float cy = std::cos(glm::radians(yaw));
-    float sy = std::sin(glm::radians(yaw));
-    float cp = std::cos(glm::radians(pitch));
-    float sp = std::sin(glm::radians(pitch));
+    float y = glm::radians(yaw   + viewShakeYaw);
+    float p = glm::radians(pitch + viewShakePitch);
+    float cy = std::cos(y);
+    float sy = std::sin(y);
+    float cp = std::cos(p);
+    float sp = std::sin(p);
     return glm::normalize(glm::vec3(cy * cp, sp, sy * cp));
 }
 
