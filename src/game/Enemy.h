@@ -6,8 +6,13 @@
 namespace game {
 
 // Per-enemy tunables. Tweak in one place to scale difficulty / vibe.
-constexpr float kEnemyRadius     = 0.55f;   // collision sphere (chest height)
-constexpr float kEnemyHeight     = 1.7f;    // for placement / centre offset
+//
+// The render offset and the hit-sphere centre both read from kEnemyHeight so
+// they can't drift apart when the model placement is retuned. The radius is
+// sized to roughly match the silhouette of the Harpy GLB scaled by kEnemyScale.
+constexpr float kEnemyScale      = 0.3f;    // uniform scale applied to the GLB at draw time
+constexpr float kEnemyHeight     = 1.7f;    // world-space Y offset for model origin + hit centre
+constexpr float kEnemyRadius     = 0.6f;    // collision sphere radius (world units; intentionally generous so syringes feel snappy)
 constexpr float kEnemyMoveSpeed  = 1.8f;    // m/s; deliberate, dread-pace shamble
 constexpr int   kEnemyMaxHp      = 2;       // dies in 2 syringe hits
 constexpr int   kEnemyXpReward   = 30;      // xp granted on death
@@ -24,9 +29,10 @@ struct Enemy {
     // Direct chase on the XZ plane. Real pathfinding lands when walls do.
     void update(float dt, const glm::vec3& playerPos);
 
-    // Centre of the collision sphere in world space (chest height).
+    // Centre of the collision sphere — anchored to the same offset the
+    // renderer uses, so projectile hits line up with the visible model.
     glm::vec3 hitCentre() const {
-        return position + glm::vec3(0.0f, kEnemyHeight * 0.5f, 0.0f);
+        return position + glm::vec3(0.0f, kEnemyHeight, 0.0f);
     }
 };
 

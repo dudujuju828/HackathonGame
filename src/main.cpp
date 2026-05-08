@@ -445,7 +445,7 @@ const render::AnimationClip* runAnim = nullptr;
                         M = glm::rotate(M, angle, glm::vec3(0.0f, 1.0f, 0.0f));
                     }
                     
-                    M = glm::scale(M, glm::vec3(0.3f)); 
+                    M = glm::scale(M, glm::vec3(game::kEnemyScale));
                     worldShader.setMat4("uModel", M);
 
                     if (hasBones) {
