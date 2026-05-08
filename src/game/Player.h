@@ -15,8 +15,8 @@ struct WalkFeel {
     float headHeight       = 1.6f;   // m
 
     // Vertical
-    float gravity      = 16.0f;      // m/s^2 (lower than realistic for floaty feel)
-    float jumpVelocity = 5.5f;       // m/s; with gravity 16 -> ~0.95 m peak / 0.69 s hang
+    float gravity      = 25.0f;      // m/s^2
+    float jumpVelocity = 7.5f;       // m/s; with gravity 25 -> ~1.13 m peak / 0.60 s hang
 
     // Step bob — head bobs vertically every step, sways laterally every other.
     float bobAmpY     = 0.075f;   // m
