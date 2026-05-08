@@ -105,6 +105,7 @@ int main() {
         weapon.setModel(&syringeModel);
         weapon.capacity = 6;
         weapon.ammo     = 6;
+        weapon.viewmodel.scale = 0.05f;
 
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
