@@ -3,6 +3,7 @@
 #include "core/Window.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
+#include "render/Hud.h"
 #include "render/Mesh.h"
 #include "render/PostFx.h"
 #include "render/Shader.h"
@@ -103,6 +104,12 @@ int main() {
             return 1;
         }
 
+        render::Hud hud;
+        if (!hud.init("assets/shaders/hud_crosshair.vert",
+                      "assets/shaders/hud_crosshair.frag")) {
+            return 1;
+        }
+
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
         while (!window.shouldClose()) {
@@ -173,6 +180,8 @@ int main() {
                          window.width(), window.height(),
                          time.total(),
                          postFx.params());
+
+            hud.drawCrosshair(window.width(), window.height(), hud.crosshair());
 
             window.swap();
         }
