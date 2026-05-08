@@ -81,6 +81,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tinyobjloader)
 
+# ---- cgltf (single-header glTF/GLB loader) -------------------------------
+FetchContent_Declare(
+    cgltf
+    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+    GIT_TAG        v1.14
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(cgltf)
+add_library(cgltf INTERFACE)
+target_include_directories(cgltf INTERFACE ${cgltf_SOURCE_DIR})
+
 # --------------------------------------------------------------------------
 # Game executable
 # --------------------------------------------------------------------------
@@ -100,6 +111,7 @@ target_link_libraries(HackathonGame PRIVATE
     stb
     miniaudio
     tinyobjloader
+    cgltf
 )
 
 if(MSVC)

@@ -2,10 +2,18 @@
 
 #include <tiny_obj_loader.h>
 
+#define CGLTF_IMPLEMENTATION
+#include <cgltf.h>
+
+#include <stb_image.h>
+
 #include <glm/geometric.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <unordered_map>
 
@@ -53,6 +61,14 @@ glm::vec2 readUV(const tinyobj::attrib_t& a, int i) {
 }  // namespace
 
 bool Model::loadFromFile(const std::string& path) {
+    std::string ext = std::filesystem::path(path).extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+                   [](unsigned char c){ return std::tolower(c); });
+    if (ext == ".glb" || ext == ".gltf") return loadGLB_(path);
+    return loadOBJ_(path);
+}
+
+bool Model::loadOBJ_(const std::string& path) {
     tinyobj::ObjReader        reader;
     tinyobj::ObjReaderConfig  cfg;
 
@@ -177,6 +193,149 @@ bool Model::loadFromFile(const std::string& path) {
     }
 
     std::printf("[model] loaded '%s' (%zu submeshes)\n", path.c_str(), meshes_.size());
+    return true;
+}
+
+namespace {
+
+std::shared_ptr<Texture> loadGltfImage(const cgltf_image* img) {
+    auto tex = std::make_shared<Texture>();
+    if (!img) return tex;
+
+    const uint8_t* bytes = nullptr;
+    size_t         size  = 0;
+    if (img->buffer_view) {
+        const cgltf_buffer_view* bv = img->buffer_view;
+        bytes = static_cast<const uint8_t*>(bv->buffer->data) + bv->offset;
+        size  = bv->size;
+    } else {
+        return tex;  // External-URI images aren't supported (GLBs we use ship embedded).
+    }
+
+    // glTF uses top-left UV origin; Texture's stb path flips by default for
+    // OBJ. Save/restore so we don't infect later loads.
+    int w, h, c;
+    stbi_set_flip_vertically_on_load(false);
+    uint8_t* pixels = stbi_load_from_memory(bytes, static_cast<int>(size),
+                                            &w, &h, &c, 4);
+    stbi_set_flip_vertically_on_load(true);
+    if (pixels) {
+        tex->createRGBA(w, h, pixels, /*nearest=*/false);
+        stbi_image_free(pixels);
+    }
+    return tex;
+}
+
+}  // namespace
+
+bool Model::loadGLB_(const std::string& path) {
+    cgltf_options opts {};
+    cgltf_data*   data = nullptr;
+
+    if (cgltf_parse_file(&opts, path.c_str(), &data) != cgltf_result_success) {
+        std::fprintf(stderr, "[model] cgltf_parse_file failed for '%s'\n", path.c_str());
+        return false;
+    }
+    if (cgltf_load_buffers(&opts, data, path.c_str()) != cgltf_result_success) {
+        std::fprintf(stderr, "[model] cgltf_load_buffers failed for '%s'\n", path.c_str());
+        cgltf_free(data);
+        return false;
+    }
+
+    meshes_.clear();
+    std::unordered_map<const cgltf_image*, std::shared_ptr<Texture>> texCache;
+
+    for (cgltf_size mi = 0; mi < data->meshes_count; ++mi) {
+        const cgltf_mesh& mesh = data->meshes[mi];
+        for (cgltf_size pi = 0; pi < mesh.primitives_count; ++pi) {
+            const cgltf_primitive& prim = mesh.primitives[pi];
+            if (prim.type != cgltf_primitive_type_triangles) continue;
+
+            const cgltf_accessor* posAcc  = nullptr;
+            const cgltf_accessor* normAcc = nullptr;
+            const cgltf_accessor* uvAcc   = nullptr;
+            for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai) {
+                const cgltf_attribute& attr = prim.attributes[ai];
+                switch (attr.type) {
+                    case cgltf_attribute_type_position: posAcc  = attr.data; break;
+                    case cgltf_attribute_type_normal:   normAcc = attr.data; break;
+                    case cgltf_attribute_type_texcoord: if (!uvAcc) uvAcc = attr.data; break;
+                    default: break;
+                }
+            }
+            if (!posAcc) continue;
+
+            const cgltf_size vCount = posAcc->count;
+            std::vector<Vertex> verts(vCount);
+            for (cgltf_size i = 0; i < vCount; ++i) {
+                cgltf_accessor_read_float(posAcc, i, &verts[i].pos.x, 3);
+                if (normAcc) {
+                    cgltf_accessor_read_float(normAcc, i, &verts[i].normal.x, 3);
+                } else {
+                    verts[i].normal = glm::vec3(0.0f, 1.0f, 0.0f);
+                }
+                if (uvAcc) {
+                    cgltf_accessor_read_float(uvAcc, i, &verts[i].uv.x, 2);
+                } else {
+                    verts[i].uv = glm::vec2(0.0f);
+                }
+            }
+
+            std::vector<uint32_t> indices;
+            if (prim.indices) {
+                const cgltf_size iCount = prim.indices->count;
+                indices.resize(iCount);
+                for (cgltf_size i = 0; i < iCount; ++i) {
+                    indices[i] = static_cast<uint32_t>(cgltf_accessor_read_index(prim.indices, i));
+                }
+            } else {
+                indices.resize(vCount);
+                for (uint32_t i = 0; i < static_cast<uint32_t>(vCount); ++i) indices[i] = i;
+            }
+
+            // Generate flat normals if the mesh shipped without any.
+            if (!normAcc) {
+                for (size_t t = 0; t + 2 < indices.size(); t += 3) {
+                    glm::vec3 p0 = verts[indices[t + 0]].pos;
+                    glm::vec3 p1 = verts[indices[t + 1]].pos;
+                    glm::vec3 p2 = verts[indices[t + 2]].pos;
+                    glm::vec3 n = glm::cross(p1 - p0, p2 - p0);
+                    if (glm::length(n) > 1e-8f) n = glm::normalize(n);
+                    verts[indices[t + 0]].normal = n;
+                    verts[indices[t + 1]].normal = n;
+                    verts[indices[t + 2]].normal = n;
+                }
+            }
+
+            ModelMesh mm;
+            mm.mesh.upload(verts, indices);
+
+            if (prim.material && prim.material->has_pbr_metallic_roughness) {
+                const auto& pbr = prim.material->pbr_metallic_roughness;
+                mm.diffuseColor = glm::vec3(pbr.base_color_factor[0],
+                                            pbr.base_color_factor[1],
+                                            pbr.base_color_factor[2]);
+                if (pbr.base_color_texture.texture &&
+                    pbr.base_color_texture.texture->image) {
+                    const cgltf_image* img = pbr.base_color_texture.texture->image;
+                    auto it = texCache.find(img);
+                    if (it != texCache.end()) {
+                        mm.diffuse = it->second;
+                    } else {
+                        auto tex = loadGltfImage(img);
+                        mm.diffuse = tex;
+                        texCache.emplace(img, tex);
+                    }
+                }
+            }
+
+            meshes_.push_back(std::move(mm));
+        }
+    }
+
+    cgltf_free(data);
+    std::printf("[model] loaded GLB '%s' (%zu submeshes)\n",
+                path.c_str(), meshes_.size());
     return true;
 }
 

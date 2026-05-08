@@ -29,7 +29,7 @@ public:
     Model(Model&&) noexcept = default;
     Model& operator=(Model&&) noexcept = default;
 
-    // Loads an OBJ (with optional MTL alongside it). Returns false on parse error.
+    // Dispatches to OBJ or glTF/GLB loader based on file extension.
     bool loadFromFile(const std::string& path);
 
     void clear() { meshes_.clear(); }
@@ -37,6 +37,9 @@ public:
     const std::vector<ModelMesh>& meshes() const { return meshes_; }
 
 private:
+    bool loadOBJ_(const std::string& path);
+    bool loadGLB_(const std::string& path);
+
     std::vector<ModelMesh> meshes_;
 };
 

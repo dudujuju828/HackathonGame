@@ -1,0 +1,57 @@
+#pragma once
+
+#include <glm/glm.hpp>
+
+namespace core   { class Input; }
+namespace render { class Camera; class Model; class Shader; }
+
+namespace game {
+
+class Player;
+
+// View-space transform for the held viewmodel.
+// offset is (right, up, forward-distance) in metres relative to the camera.
+struct ViewmodelTransform {
+    glm::vec3 offset   { 0.28f, -0.22f, 0.55f };
+    glm::vec3 rotation { 0.0f, -8.0f, 0.0f };  // pitch, yaw, roll (deg)
+    float     scale    = 0.30f;
+};
+
+// Pre-enemy weapon: held viewmodel + click-to-fire that decrements ammo,
+// kicks the viewmodel forward, and adds player view-shake. Hit detection
+// will plug in once enemies exist.
+class Weapon {
+public:
+    Weapon() = default;
+
+    void setModel(const render::Model* m) { model_ = m; }
+
+    // Updates fire timing + kickback. Returns true if a shot fired this frame.
+    bool update(float dt, const core::Input& input, Player& player);
+
+    // Draws the viewmodel using the given world-space shader. Caller is
+    // responsible for clearing depth first if it wants the gun to stay on
+    // top of geometry (and for binding the shader's view/proj uniforms).
+    void draw(render::Shader& worldShader, const render::Camera& cam) const;
+
+    int   ammo          = 6;
+    int   capacity      = 6;
+    float fireRate      = 0.85f;  // seconds between shots
+    float traumaPerShot = 0.45f;
+
+    ViewmodelTransform viewmodel {};
+
+    bool firedThisFrame() const { return firedThisFrame_; }
+
+private:
+    glm::mat4 worldMatrix_(const render::Camera& cam) const;
+
+    const render::Model* model_ = nullptr;
+    float cooldown_     = 0.0f;
+    float kickback_     = 0.0f;
+    float kickDecay_    = 4.0f;
+    bool  firedThisFrame_ = false;
+    bool  prevClick_      = false;
+};
+
+}  // namespace game

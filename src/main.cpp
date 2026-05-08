@@ -2,10 +2,12 @@
 #include "core/Time.h"
 #include "core/Window.h"
 #include "game/Player.h"
+#include "game/Weapon.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
 #include "render/Hud.h"
 #include "render/Mesh.h"
+#include "render/Model.h"
 #include "render/PostFx.h"
 #include "render/Shader.h"
 #include "render/Texture.h"
@@ -94,6 +96,16 @@ int main() {
         game::Player player;
         player.setSpawn({ 0.0f, 0.0f, 3.0f });
 
+        render::Model syringeModel;
+        if (!syringeModel.loadFromFile("assets/models/syringe.glb")) {
+            std::fprintf(stderr, "[main] failed to load syringe model\n");
+        }
+
+        game::Weapon weapon;
+        weapon.setModel(&syringeModel);
+        weapon.capacity = 6;
+        weapon.ammo     = 6;
+
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
 
@@ -107,10 +119,7 @@ int main() {
         if (!hud.init("assets/shaders")) {
             return 1;
         }
-        // Demo values — wire to game state once Player/Weapon exist.
         hud.healthBar().fraction = 0.62f;
-        hud.ammo().current  = 8;
-        hud.ammo().capacity = 12;
 
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
@@ -123,6 +132,7 @@ int main() {
             if (input.key(GLFW_KEY_ESCAPE)) break;
 
             player.update(dt, input, time.total());
+            weapon.update(dt, input, player);
             const render::Camera& cam = player.camera();
 
             // Keep the scene FBO matched to the window size.
@@ -161,6 +171,10 @@ int main() {
                 cube.draw();
             }
 
+            // Held viewmodel: clear depth so the syringe never clips into walls.
+            glClear(GL_DEPTH_BUFFER_BIT);
+            weapon.draw(worldShader, cam);
+
             // Post-process pass to default framebuffer.
             render::Framebuffer::bindDefault(window.width(), window.height());
             glClear(GL_COLOR_BUFFER_BIT);
@@ -168,6 +182,9 @@ int main() {
                          window.width(), window.height(),
                          time.total(),
                          postFx.params());
+
+            hud.ammo().current  = weapon.ammo;
+            hud.ammo().capacity = weapon.capacity;
 
             hud.drawHealthBar(window.width(), window.height(), time.total(),
                               hud.healthBar());
