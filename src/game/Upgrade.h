@@ -11,6 +11,7 @@ enum class UpgradeType {
     MaxHealth,
     ExtraProjectile,
     ProjectileSpeed,
+    FanOut,
 };
 
 struct Upgrade {
@@ -27,7 +28,8 @@ inline std::vector<Upgrade> getUpgradePool() {
         { UpgradeType::SprintSpeed,      "ADRENALINE",    "+20% Sprint Speed",  1.20f },
         { UpgradeType::FireRate,         "FAST TRIGGER",  "+25% Fire Rate",     0.75f }, // 0.75 * interval = faster
         { UpgradeType::ProjectileSpeed,  "HYPER-NEEDLE",  "+40% Proj Speed",    1.40f },
-        { UpgradeType::ExtraProjectile,  "TWIN NEEDLE",   "+1 Syringe per shot", 1.0f  },
+        { UpgradeType::ExtraProjectile,  "TWIN NEEDLE",   "+1 Syringe (Burst)", 1.0f  },
+        { UpgradeType::FanOut,           "SPREAD SHOT",   "+1 Syringe (Fan)",   1.0f  },
     };
 }
 

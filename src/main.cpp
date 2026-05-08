@@ -225,6 +225,9 @@ int main() {
                         case game::UpgradeType::ExtraProjectile:
                             weapon.projectileCount += (int)upgrade->magnitude;
                             break;
+                        case game::UpgradeType::FanOut:
+                            weapon.fanColumns += (int)upgrade->magnitude;
+                            break;
                         default: break;
                     }
                     player.consumeLevelUp();

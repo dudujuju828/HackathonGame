@@ -40,8 +40,10 @@ public:
     bool  autoFire      = false;  // true: holding the button keeps firing
     float fireRate      = 0.85f;  // seconds between shots (caps shots/sec)
     float traumaPerShot = 0.45f;
-    int   projectileCount = 1;     // shots per trigger pull
+    int   projectileCount = 1;     // shots per trigger pull (burst)
     float burstInterval   = 0.06f; // delay between syringes in a multi-shot
+    int   fanColumns      = 1;     // number of syringes fired simultaneously in an arc
+    float fanSpreadDeg    = 75.0f; // total angle of the spread arc
 
     ViewmodelTransform viewmodel {};
 
