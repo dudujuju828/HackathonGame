@@ -272,9 +272,10 @@ int main() {
                     // Calculate a local right vector for this specific projectile's offset
                     glm::vec3 localRight = glm::normalize(glm::cross(dir, up));
 
-                    // Add a tiny bit of random spread to prevent perfect perspective eclipsing
-                    float spreadX = ((std::rand() % 100) / 100.0f - 0.5f) * 0.05f;
-                    float spreadY = ((std::rand() % 100) / 100.0f - 0.5f) * 0.05f;
+                    // Add a tiny bit of random spread to prevent perfect perspective eclipsing,
+                    // kept very small so the weapon remains accurate to the crosshair.
+                    float spreadX = ((std::rand() % 100) / 100.0f - 0.5f) * 0.015f;
+                    float spreadY = ((std::rand() % 100) / 100.0f - 0.5f) * 0.015f;
                     glm::vec3 finalDir = glm::normalize(dir + localRight * spreadX + up * spreadY);
 
                     game::Projectile p;
