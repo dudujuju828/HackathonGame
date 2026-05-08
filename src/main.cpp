@@ -113,8 +113,9 @@ int main() {
 
         std::vector<game::Projectile> projectiles;
         projectiles.reserve(64);
-        const float projectileSpeed = 8.0f;  // m/s — slow enough to read visually
-        const float projectileScale = 0.05f; // match the held viewmodel
+        const float projectileSpeed = 14.0f;  // m/s
+        const float projectileScale = 0.05f;  // match the held viewmodel
+        const float projectileShrink = 0.75f; // 0..1, fraction of scale lost by maxAge
 
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
@@ -225,7 +226,10 @@ int main() {
                     M[1] = glm::vec4(vup,         0.0f);
                     M[2] = glm::vec4(-vfwd,       0.0f);
                     M[3] = glm::vec4(p.position,  1.0f);
-                    M = glm::scale(M, glm::vec3(p.scale));
+                    // Shrink with age to exaggerate distance / speed.
+                    float ageFrac = p.maxAge > 0.0f ? p.age / p.maxAge : 0.0f;
+                    float shrinkMul = 1.0f - projectileShrink * ageFrac;
+                    M = glm::scale(M, glm::vec3(p.scale * shrinkMul));
 
                     worldShader.setMat4("uModel", M);
                     for (const auto& sub : syringeModel.meshes()) {
