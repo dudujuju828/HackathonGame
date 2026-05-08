@@ -3,10 +3,12 @@
 #include "core/Window.h"
 #include "game/Enemy.h"
 #include "game/EnemySpawner.h"
+#include "game/LevelUpMenu.h"
 #include "game/Player.h"
 #include "game/Projectile.h"
 #include "game/Scene.h"
 #include "game/SettingsMenu.h"
+#include "game/Upgrade.h"
 #include "game/Weapon.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
@@ -118,7 +120,7 @@ int main() {
 
         std::vector<game::Projectile> projectiles;
         projectiles.reserve(64);
-        const float projectileSpeed = 25.0f;  // m/s
+        float projectileSpeed = 25.0f;  // m/s
         const float projectileScale = 0.05f;  // match the held viewmodel
         const float projectileShrink = 0.75f; // 0..1, fraction of scale lost by maxAge
 
@@ -150,6 +152,7 @@ int main() {
         }
 
         game::SettingsMenu settingsMenu;
+        game::LevelUpMenu  levelUpMenu;
         game::Scene scene = game::Scene::Playing;
         bool prevEscape = false;
 
@@ -187,13 +190,52 @@ int main() {
             }
 
             if (scene == game::Scene::Playing) {
-                player.update(dt, input, time.total());
-                weapon.update(dt, input, player);
-            } else {
+                // Trigger level-up menu if pending.
+                if (player.pendingLevelUps() > 0) {
+                    scene = game::Scene::LevelUp;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    input.resetMouseDelta();
+                    levelUpMenu.reset();
+                } else {
+                    player.update(dt, input, time.total());
+                    weapon.update(dt, input, player);
+                }
+            } else if (scene == game::Scene::Settings) {
                 game::MenuAction action =
                     settingsMenu.update(dt, input,
                                         window.width(), window.height());
                 if (action == game::MenuAction::ExitGame) break;
+            } else if (scene == game::Scene::LevelUp) {
+                auto upgrade = levelUpMenu.update(dt, input, window.width(), window.height());
+                if (upgrade) {
+                    // Apply upgrade.
+                    switch (upgrade->type) {
+                        case game::UpgradeType::MoveSpeed:
+                            player.feel().moveSpeed *= upgrade->magnitude;
+                            break;
+                        case game::UpgradeType::SprintSpeed:
+                            player.feel().sprintMultiplier *= upgrade->magnitude;
+                            break;
+                        case game::UpgradeType::FireRate:
+                            weapon.fireRate *= upgrade->magnitude;
+                            break;
+                        case game::UpgradeType::ProjectileSpeed:
+                            projectileSpeed *= upgrade->magnitude;
+                            break;
+                        case game::UpgradeType::ExtraProjectile:
+                            weapon.projectileCount += (int)upgrade->magnitude;
+                            break;
+                        default: break;
+                    }
+                    player.consumeLevelUp();
+                    if (player.pendingLevelUps() == 0) {
+                        scene = game::Scene::Playing;
+                        glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                        input.resetMouseDelta();
+                    } else {
+                        levelUpMenu.reset(); // Pick next set of options for subsequent level
+                    }
+                }
             }
 
             // Apply fullscreen toggle each frame (cheap if already in state).
@@ -383,8 +425,10 @@ int main() {
                           hud.xpBar().topPx - 14.0f,
                           lvl, lvlScale,
                           glm::vec4(0.85f, 1.0f, 0.85f, 1.0f));
-            } else {
+            } else if (scene == game::Scene::Settings) {
                 settingsMenu.draw(hud, text, window.width(), window.height());
+            } else if (scene == game::Scene::LevelUp) {
+                levelUpMenu.draw(hud, text, window.width(), window.height());
             }
 
             window.swap();

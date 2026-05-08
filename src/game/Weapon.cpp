@@ -20,18 +20,36 @@ bool Weapon::update(float dt, const core::Input& input, Player& player) {
     cooldown_ = std::max(0.0f, cooldown_ - dt);
     kickback_ = std::max(0.0f, kickback_ - kickDecay_ * dt);
 
+    // Handle ongoing burst.
+    if (burstRemaining_ > 0) {
+        burstTimer_ -= dt;
+        if (burstTimer_ <= 0.0f) {
+            burstTimer_ += burstInterval;
+            burstRemaining_--;
+            firedThisFrame_ = true;
+            kickback_ = 1.0f;
+            player.addTrauma(traumaPerShot * 0.5f); // smaller shake for follow-up shots
+        }
+    }
+
     const bool click       = input.mouseButton(GLFW_MOUSE_BUTTON_LEFT);
     const bool justClicked = click && !prevClick_;
     prevClick_ = click;
 
     const bool fireTrigger = autoFire ? click : justClicked;
 
-    if (fireTrigger && cooldown_ <= 0.0f && (unlimited || ammo > 0)) {
+    // Trigger new shot/burst if not already bursting and cooldown is ready.
+    if (fireTrigger && cooldown_ <= 0.0f && burstRemaining_ <= 0 && (unlimited || ammo > 0)) {
         if (!unlimited) ammo -= 1;
         cooldown_  = fireRate;
         kickback_  = 1.0f;
         player.addTrauma(traumaPerShot);
         firedThisFrame_ = true;
+
+        if (projectileCount > 1) {
+            burstRemaining_ = projectileCount - 1;
+            burstTimer_ = burstInterval;
+        }
     }
     return firedThisFrame_;
 }

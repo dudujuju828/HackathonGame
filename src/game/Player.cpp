@@ -40,6 +40,7 @@ void Player::addXp(int amount) {
         xp_       -= xpToNext_;
         level_    += 1;
         xpToNext_  = 100 * level_;  // linear ramp; swap for a curve later
+        pendingLevelUps_ += 1;
     }
 }
 

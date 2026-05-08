@@ -40,6 +40,8 @@ public:
     bool  autoFire      = false;  // true: holding the button keeps firing
     float fireRate      = 0.85f;  // seconds between shots (caps shots/sec)
     float traumaPerShot = 0.45f;
+    int   projectileCount = 1;     // shots per trigger pull
+    float burstInterval   = 0.06f; // delay between syringes in a multi-shot
 
     ViewmodelTransform viewmodel {};
 
@@ -54,6 +56,9 @@ private:
     float kickDecay_    = 4.0f;
     bool  firedThisFrame_ = false;
     bool  prevClick_      = false;
+
+    int   burstRemaining_ = 0;
+    float burstTimer_     = 0.0f;
 };
 
 }  // namespace game

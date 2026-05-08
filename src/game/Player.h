@@ -59,6 +59,9 @@ public:
     void addXp(int amount);
     void setProgress(int level, int xp);
 
+    int  pendingLevelUps() const { return pendingLevelUps_; }
+    void consumeLevelUp()        { if (pendingLevelUps_ > 0) pendingLevelUps_--; }
+
     render::Camera&       camera()       { return camera_; }
     const render::Camera& camera() const { return camera_; }
 
@@ -78,6 +81,7 @@ private:
     int level_     = 1;
     int xp_        = 0;
     int xpToNext_  = 100;
+    int pendingLevelUps_ = 0;
 
     WalkFeel       feel_   {};
     render::Camera camera_ {};
