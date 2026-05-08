@@ -29,6 +29,20 @@ struct HealthBarParams {
     float     opacity           = 0.92f;
 };
 
+// Player-progression bar (top-centre, thinner than health for visual hierarchy).
+struct XpBarParams {
+    int       level    = 1;
+    int       xp       = 0;
+    int       xpToNext = 100;
+    glm::vec2 sizePx       { 360.0f, 10.0f };
+    float     topPx       = 24.0f;            // distance from top of screen
+    glm::vec3 fillColor   { 0.45f, 0.85f, 0.55f };
+    glm::vec3 emptyColor  { 0.04f, 0.08f, 0.05f };
+    glm::vec3 borderColor { 0.35f, 0.55f, 0.40f };
+    float     borderPx    = 1.0f;
+    float     opacity     = 0.92f;
+};
+
 // Ammo currently in the magazine. The bar segments to match capacity so the
 // HUD reads the same regardless of weapon (pistol cap=12, shotgun cap=8, etc.).
 struct AmmoParams {
@@ -59,6 +73,7 @@ public:
     void drawHealthBar (int targetW, int targetH, float timeSeconds,
                         const HealthBarParams& p);
     void drawAmmo      (int targetW, int targetH, const AmmoParams& p);
+    void drawXpBar     (int targetW, int targetH, const XpBarParams& p);
 
     // General-purpose bar primitive (used by health/ammo internally; also
     // exposed for menu sliders, panels, etc.).
@@ -77,6 +92,7 @@ public:
     CrosshairParams& crosshair() { return crosshair_; }
     HealthBarParams& healthBar() { return healthBar_; }
     AmmoParams&      ammo()      { return ammo_; }
+    XpBarParams&     xpBar()     { return xpBar_; }
 
 private:
     void release();
@@ -98,6 +114,7 @@ private:
     CrosshairParams crosshair_ {};
     HealthBarParams healthBar_ {};
     AmmoParams      ammo_ {};
+    XpBarParams     xpBar_ {};
 };
 
 }  // namespace render

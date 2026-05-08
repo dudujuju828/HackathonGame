@@ -101,6 +101,7 @@ int main() {
 
         game::Player player;
         player.setSpawn({ 0.0f, 0.0f, 3.0f });
+        player.setProgress(/*level=*/1, /*xp=*/35);  // demo until kills wire in
 
         render::Model syringeModel;
         if (!syringeModel.loadFromFile("assets/models/syringe.glb")) {
@@ -310,9 +311,26 @@ int main() {
                          postFx.params());
 
             if (scene == game::Scene::Playing) {
-                hud.drawHealthBar(window.width(), window.height(), time.total(),
-                                  hud.healthBar());
-                hud.drawCrosshair(window.width(), window.height(), hud.crosshair());
+                hud.xpBar().level    = player.level();
+                hud.xpBar().xp       = player.xp();
+                hud.xpBar().xpToNext = player.xpToNext();
+
+                hud.drawXpBar     (window.width(), window.height(), hud.xpBar());
+                hud.drawHealthBar (window.width(), window.height(), time.total(),
+                                   hud.healthBar());
+                hud.drawCrosshair (window.width(), window.height(), hud.crosshair());
+
+                // "LV N" label centred above the XP bar.
+                char lvlBuf[16];
+                std::snprintf(lvlBuf, sizeof(lvlBuf), "LV %d", player.level());
+                const std::string lvl = lvlBuf;
+                const float lvlScale  = 1.5f;
+                const float lvlW      = render::Text::measure(lvl) * lvlScale;
+                text.draw(window.width(), window.height(),
+                          window.width() * 0.5f - lvlW * 0.5f,
+                          hud.xpBar().topPx - 14.0f,
+                          lvl, lvlScale,
+                          glm::vec4(0.85f, 1.0f, 0.85f, 1.0f));
             } else {
                 settingsMenu.draw(hud, text, window.width(), window.height());
             }

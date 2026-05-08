@@ -150,6 +150,18 @@ void Hud::drawProgress(int W, int H,
              fillColor, emptyColor, borderColor, borderPx, /*pulse=*/0.0f, opacity);
 }
 
+void Hud::drawXpBar(int W, int H, const XpBarParams& p) {
+    const float cx   = W * 0.5f;
+    const float frac = (p.xpToNext > 0)
+        ? std::clamp(static_cast<float>(p.xp) / static_cast<float>(p.xpToNext),
+                     0.0f, 1.0f)
+        : 0.0f;
+    const glm::vec2 origin { cx - p.sizePx.x * 0.5f, p.topPx };
+    drawBar_(W, H, origin, p.sizePx, frac, /*segments=*/0,
+             p.fillColor, p.emptyColor, p.borderColor,
+             p.borderPx, /*pulse=*/0.0f, p.opacity);
+}
+
 void Hud::drawAmmo(int targetW, int targetH, const AmmoParams& p) {
     const int   segments = std::max(p.capacity, 1);
     const int   current  = std::clamp(p.current, 0, segments);

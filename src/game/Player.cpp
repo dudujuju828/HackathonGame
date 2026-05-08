@@ -33,6 +33,22 @@ void Player::addTrauma(float a) {
     trauma_ = std::clamp(trauma_ + a, 0.0f, 1.0f);
 }
 
+void Player::addXp(int amount) {
+    if (amount <= 0) return;
+    xp_ += amount;
+    while (xp_ >= xpToNext_) {
+        xp_       -= xpToNext_;
+        level_    += 1;
+        xpToNext_  = 100 * level_;  // linear ramp; swap for a curve later
+    }
+}
+
+void Player::setProgress(int level, int xp) {
+    level_     = std::max(1, level);
+    xp_        = std::max(0, xp);
+    xpToNext_  = 100 * level_;
+}
+
 void Player::update(float dt, const core::Input& input, float t) {
     // Mouse look (advances yaw/pitch on the camera).
     camera_.addLook(input.mouseDX(), input.mouseDY());

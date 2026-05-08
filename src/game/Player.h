@@ -51,6 +51,14 @@ public:
     glm::vec3 position() const { return position_; }
     glm::vec3 velocity() const { return velocity_; }
 
+    // Progression. addXp handles the level-up loop; setProgress is for
+    // initial state (debug, save-game restore, etc.).
+    int  level()    const { return level_; }
+    int  xp()       const { return xp_; }
+    int  xpToNext() const { return xpToNext_; }
+    void addXp(int amount);
+    void setProgress(int level, int xp);
+
     render::Camera&       camera()       { return camera_; }
     const render::Camera& camera() const { return camera_; }
 
@@ -66,6 +74,10 @@ private:
     float trauma_       = 0.0f;  // 0..1
     bool  onGround_     = true;
     bool  prevJump_     = false;
+
+    int level_     = 1;
+    int xp_        = 0;
+    int xpToNext_  = 100;
 
     WalkFeel       feel_   {};
     render::Camera camera_ {};
