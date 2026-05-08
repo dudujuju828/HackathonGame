@@ -10,8 +10,13 @@ namespace game {
 
 struct WalkFeel {
     // Movement
-    float moveSpeed   = 4.0f;     // m/s
-    float headHeight  = 1.6f;     // m
+    float moveSpeed        = 4.0f;   // m/s walking baseline
+    float sprintMultiplier = 1.7f;   // multiplied with moveSpeed while sprinting
+    float headHeight       = 1.6f;   // m
+
+    // Vertical
+    float gravity      = 16.0f;      // m/s^2 (lower than realistic for floaty feel)
+    float jumpVelocity = 5.5f;       // m/s; with gravity 16 -> ~0.95 m peak / 0.69 s hang
 
     // Step bob — head bobs vertically every step, sways laterally every other.
     float bobAmpY     = 0.075f;   // m
@@ -59,6 +64,8 @@ private:
     float bobPhase_     = 0.0f;
     float bobIntensity_ = 0.0f;  // 0..1, smoothed
     float trauma_       = 0.0f;  // 0..1
+    bool  onGround_     = true;
+    bool  prevJump_     = false;
 
     WalkFeel       feel_   {};
     render::Camera camera_ {};

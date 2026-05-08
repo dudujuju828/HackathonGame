@@ -22,6 +22,8 @@ void Player::setSpawn(const glm::vec3& feet) {
     bobPhase_        = 0.0f;
     bobIntensity_    = 0.0f;
     trauma_          = 0.0f;
+    onGround_        = true;
+    prevJump_        = false;
     camera_.position = feet + glm::vec3(0.0f, feel_.headHeight, 0.0f);
     camera_.viewShakeYaw   = 0.0f;
     camera_.viewShakePitch = 0.0f;
@@ -47,16 +49,42 @@ void Player::update(float dt, const core::Input& input, float t) {
     if (input.key(GLFW_KEY_A)) wish -= side;
     if (glm::length(wish) > 1e-4f) wish = glm::normalize(wish);
 
-    velocity_ = wish * feel_.moveSpeed;
+    const bool sprint =
+        input.key(GLFW_KEY_LEFT_SHIFT) || input.key(GLFW_KEY_RIGHT_SHIFT);
+    const float horizSpeed =
+        feel_.moveSpeed * (sprint ? feel_.sprintMultiplier : 1.0f);
+
+    // Vertical: integrate gravity, then optionally override on jump.
+    velocity_.y -= feel_.gravity * dt;
+
+    const bool jumpNow         = input.key(GLFW_KEY_SPACE);
+    const bool jumpJustPressed = jumpNow && !prevJump_;
+    prevJump_ = jumpNow;
+    if (jumpJustPressed && onGround_) {
+        velocity_.y = feel_.jumpVelocity;
+        onGround_   = false;
+    }
+
+    velocity_.x = wish.x * horizSpeed;
+    velocity_.z = wish.z * horizSpeed;
     position_ += velocity_ * dt;
 
-    // Step phase advances with ground speed.
-    const float speed = glm::length(velocity_);
-    bobPhase_ += speed * feel_.bobStepRate * dt;
+    // Ground plane clamp at y=0. (Real collision arrives with the level.)
+    if (position_.y <= 0.0f) {
+        position_.y = 0.0f;
+        if (velocity_.y < 0.0f) velocity_.y = 0.0f;
+        onGround_ = true;
+    }
+
+    // Step phase advances with ground speed (xz only).
+    const float speedXZ = std::sqrt(velocity_.x * velocity_.x +
+                                    velocity_.z * velocity_.z);
+    bobPhase_ += speedXZ * feel_.bobStepRate * dt;
     if (bobPhase_ > 1e6f) bobPhase_ = std::fmod(bobPhase_, 1.0f);
 
-    // Smooth bob amplitude in/out so stopping doesn't snap.
-    const float target = (speed > 0.05f) ? 1.0f : 0.0f;
+    // Bob only while moving on the ground; mute mid-air so the head doesn't
+    // bob during a jump.
+    const float target = (speedXZ > 0.05f && onGround_) ? 1.0f : 0.0f;
     const float blend  = std::min(feel_.bobBlend * dt, 1.0f);
     bobIntensity_ = glm::mix(bobIntensity_, target, blend);
 
