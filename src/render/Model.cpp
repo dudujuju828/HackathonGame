@@ -255,12 +255,16 @@ bool Model::loadGLB_(const std::string& path) {
             const cgltf_accessor* posAcc  = nullptr;
             const cgltf_accessor* normAcc = nullptr;
             const cgltf_accessor* uvAcc   = nullptr;
+            const cgltf_accessor* jointAcc = nullptr;
+            const cgltf_accessor* weightAcc = nullptr;
             for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai) {
                 const cgltf_attribute& attr = prim.attributes[ai];
                 switch (attr.type) {
                     case cgltf_attribute_type_position: posAcc  = attr.data; break;
                     case cgltf_attribute_type_normal:   normAcc = attr.data; break;
                     case cgltf_attribute_type_texcoord: if (!uvAcc) uvAcc = attr.data; break;
+                    case cgltf_attribute_type_joints:   if (!jointAcc) jointAcc = attr.data; break;
+                    case cgltf_attribute_type_weights:  if (!weightAcc) weightAcc = attr.data; break;
                     default: break;
                 }
             }
@@ -279,6 +283,16 @@ bool Model::loadGLB_(const std::string& path) {
                     cgltf_accessor_read_float(uvAcc, i, &verts[i].uv.x, 2);
                 } else {
                     verts[i].uv = glm::vec2(0.0f);
+                }
+                if (jointAcc) {
+                    cgltf_uint j[4] = {0,0,0,0};
+                    cgltf_accessor_read_uint(jointAcc, i, j, 4);
+                    verts[i].boneIds = glm::ivec4(j[0], j[1], j[2], j[3]);
+                }
+                if (weightAcc) {
+                    cgltf_float w[4] = {0.0f};
+                    cgltf_accessor_read_float(weightAcc, i, w, 4);
+                    verts[i].boneWeights = glm::vec4(w[0], w[1], w[2], w[3]);
                 }
             }
 

@@ -116,7 +116,8 @@ int main() {
         if (!enemyModel.loadFromFile("assets/models/Harpy.glb")) {
             std::fprintf(stderr, "[main] failed to load enemy model\n");
         }
-        const render::AnimationClip* runAnim = nullptr;
+        if(enemyModel.skeleton()){printf("Harpy has skeleton with %zu joints\n", enemyModel.skeleton()->joints.size());}else{printf("Harpy has NO skeleton!\n");}
+const render::AnimationClip* runAnim = nullptr;
         if (!enemyModel.animations().empty()) {
             runAnim = &enemyModel.animations()[0];
         }
@@ -516,3 +517,5 @@ int main() {
     }
     return 0;
 }
+
+
