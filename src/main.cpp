@@ -112,7 +112,7 @@ int main() {
         weapon.unlimited = true;
         weapon.autoFire  = true;
         weapon.fireRate  = 0.2f;   // 5 shots/sec cap
-        weapon.viewmodel.scale = 0.05f;
+        weapon.viewmodel.scale = 0.035f;
 
         std::vector<game::Projectile> projectiles;
         projectiles.reserve(64);
