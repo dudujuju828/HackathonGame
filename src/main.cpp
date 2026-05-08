@@ -1,6 +1,8 @@
 #include "core/Input.h"
 #include "core/Time.h"
 #include "core/Window.h"
+#include "game/Enemy.h"
+#include "game/EnemySpawner.h"
 #include "game/Player.h"
 #include "game/Projectile.h"
 #include "game/Scene.h"
@@ -101,7 +103,6 @@ int main() {
 
         game::Player player;
         player.setSpawn({ 0.0f, 0.0f, 3.0f });
-        player.setProgress(/*level=*/1, /*xp=*/35);  // demo until kills wire in
 
         render::Model syringeModel;
         if (!syringeModel.loadFromFile("assets/models/syringe.glb")) {
@@ -120,6 +121,12 @@ int main() {
         const float projectileSpeed = 25.0f;  // m/s
         const float projectileScale = 0.05f;  // match the held viewmodel
         const float projectileShrink = 0.75f; // 0..1, fraction of scale lost by maxAge
+
+        std::vector<game::Enemy> enemies;
+        enemies.reserve(32);
+        game::EnemySpawner spawner;
+        spawner.intervalSec = 4.0f;
+        spawner.spawnRadius = 14.0f;
 
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
@@ -217,6 +224,36 @@ int main() {
                 p.position += p.velocity * dt;
                 p.age      += dt;
             }
+            // Spawn + advance enemies (also gated by Playing scene).
+            spawner.update(dt, enemies, player.position());
+            for (auto& e : enemies) {
+                if (e.alive()) e.update(dt, player.position());
+            }
+
+            // Projectile <-> enemy hit detection. Sphere-vs-point. First alive
+            // enemy within radius takes the hit and ends the projectile.
+            for (auto& p : projectiles) {
+                if (!p.alive()) continue;
+                for (auto& e : enemies) {
+                    if (!e.alive()) continue;
+                    if (glm::distance(p.position, e.hitCentre()) < game::kEnemyRadius) {
+                        e.hp -= 1;
+                        p.age = p.maxAge;          // mark projectile for cull
+                        if (!e.alive()) {
+                            player.addXp(game::kEnemyXpReward);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            // Cull dead enemies.
+            enemies.erase(
+                std::remove_if(enemies.begin(), enemies.end(),
+                               [](const game::Enemy& e){ return !e.alive(); }),
+                enemies.end());
+
+            // Re-cull projectiles that died from a hit.
             projectiles.erase(
                 std::remove_if(projectiles.begin(), projectiles.end(),
                                [](const game::Projectile& p){ return !p.alive(); }),
@@ -244,6 +281,7 @@ int main() {
                                      glm::cos(glm::radians(outerDeg)));
             }
             worldShader.setVec3 ("uFlashColor", glm::vec3(1.2f, 1.15f, 1.0f));
+            worldShader.setVec3 ("uTint", glm::vec3(1.0f));  // default for world geometry
 
             // A small grid of cubes to wander around.
             for (int z = -3; z <= 3; ++z) {
@@ -263,6 +301,20 @@ int main() {
                 M = glm::scale(M, glm::vec3(40.0f, 0.1f, 40.0f));
                 worldShader.setMat4("uModel", M);
                 cube.draw();
+            }
+
+            // Enemies: tall scaled cubes tinted red so they read at a glance.
+            if (!enemies.empty()) {
+                worldShader.setVec3("uTint", glm::vec3(1.5f, 0.30f, 0.30f));
+                for (const auto& e : enemies) {
+                    glm::mat4 M(1.0f);
+                    M = glm::translate(M, e.position +
+                                          glm::vec3(0.0f, game::kEnemyHeight * 0.5f, 0.0f));
+                    M = glm::scale(M, glm::vec3(0.7f, game::kEnemyHeight, 0.7f));
+                    worldShader.setMat4("uModel", M);
+                    cube.draw();
+                }
+                worldShader.setVec3("uTint", glm::vec3(1.0f));
             }
 
             // In-flight projectiles (depth-tested against the world).

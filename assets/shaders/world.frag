@@ -5,6 +5,7 @@ in vec3 vNormal;
 in vec2 vUV;
 
 uniform sampler2D uAlbedo;
+uniform vec3 uTint;        // multiplied with albedo (vec3(1) for no-op)
 uniform vec3 uCamPos;
 uniform vec3 uCamDir;
 uniform vec3 uAmbient;
@@ -15,7 +16,7 @@ uniform vec3 uFlashColor;
 out vec4 FragColor;
 
 void main() {
-    vec3 albedo = texture(uAlbedo, vUV).rgb;
+    vec3 albedo = texture(uAlbedo, vUV).rgb * uTint;
     vec3 N = normalize(vNormal);
 
     vec3 toFrag = vWorldPos - uCamPos;
