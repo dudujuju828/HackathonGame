@@ -105,10 +105,13 @@ int main() {
         }
 
         render::Hud hud;
-        if (!hud.init("assets/shaders/hud_crosshair.vert",
-                      "assets/shaders/hud_crosshair.frag")) {
+        if (!hud.init("assets/shaders")) {
             return 1;
         }
+        // Demo values — wire to game state once Player/Weapon exist.
+        hud.healthBar().fraction = 0.62f;
+        hud.ammo().current  = 8;
+        hud.ammo().capacity = 12;
 
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
@@ -181,6 +184,9 @@ int main() {
                          time.total(),
                          postFx.params());
 
+            hud.drawHealthBar(window.width(), window.height(), time.total(),
+                              hud.healthBar());
+            hud.drawAmmo     (window.width(), window.height(), hud.ammo());
             hud.drawCrosshair(window.width(), window.height(), hud.crosshair());
 
             window.swap();

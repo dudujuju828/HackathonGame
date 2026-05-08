@@ -13,7 +13,34 @@ struct CrosshairParams {
     float     thickness = 2.0f;   // arm full thickness, px
     float     gap       = 4.0f;   // center gap radius, px
     float     outline   = 1.0f;   // dark outline width, px (0 to disable)
-    float     opacity   = 0.9f;   // 0..1
+    float     opacity   = 0.9f;
+};
+
+struct HealthBarParams {
+    float     fraction          = 1.0f;          // 0..1
+    glm::vec2 sizePx            { 220.0f, 14.0f };
+    glm::vec2 marginPx          { 24.0f, 24.0f }; // from bottom-left
+    glm::vec3 colorFull         { 0.78f, 0.10f, 0.10f };
+    glm::vec3 colorCritical     { 1.00f, 0.20f, 0.10f };
+    glm::vec3 emptyColor        { 0.05f, 0.02f, 0.02f };
+    glm::vec3 borderColor       { 0.55f, 0.40f, 0.40f };
+    float     borderPx          = 1.0f;
+    float     criticalThreshold = 0.30f;          // pulse below this
+    float     opacity           = 0.92f;
+};
+
+// Ammo currently in the magazine. The bar segments to match capacity so the
+// HUD reads the same regardless of weapon (pistol cap=12, shotgun cap=8, etc.).
+struct AmmoParams {
+    int       current     = 12;
+    int       capacity    = 12;
+    glm::vec2 sizePx      { 220.0f, 14.0f };
+    glm::vec2 marginPx    { 24.0f, 24.0f }; // from bottom-right
+    glm::vec3 fillColor   { 0.95f, 0.85f, 0.40f };
+    glm::vec3 emptyColor  { 0.06f, 0.05f, 0.04f };
+    glm::vec3 borderColor { 0.55f, 0.50f, 0.40f };
+    float     borderPx    = 1.0f;
+    float     opacity     = 0.92f;
 };
 
 class Hud {
@@ -24,21 +51,39 @@ public:
     Hud(const Hud&) = delete;
     Hud& operator=(const Hud&) = delete;
 
-    bool init(const std::string& crosshairVert,
-              const std::string& crosshairFrag);
+    // Loads hud_crosshair.{vert,frag} and hud_bar.{vert,frag} from shaderDir.
+    bool init(const std::string& shaderDir = "assets/shaders");
 
-    // Caller is responsible for binding the target framebuffer + viewport.
-    void drawCrosshair(int targetW, int targetH, const CrosshairParams& p);
+    // Each draw expects its target framebuffer + viewport already bound.
+    void drawCrosshair (int targetW, int targetH, const CrosshairParams& p);
+    void drawHealthBar (int targetW, int targetH, float timeSeconds,
+                        const HealthBarParams& p);
+    void drawAmmo      (int targetW, int targetH, const AmmoParams& p);
 
     CrosshairParams& crosshair() { return crosshair_; }
+    HealthBarParams& healthBar() { return healthBar_; }
+    AmmoParams&      ammo()      { return ammo_; }
 
 private:
     void release();
+    void drawBar_(int targetW, int targetH,
+                  const glm::vec2& origin, const glm::vec2& sizePx,
+                  float fill, int segments,
+                  const glm::vec3& fillColor,
+                  const glm::vec3& emptyColor,
+                  const glm::vec3& borderColor,
+                  float borderPx,
+                  float pulse,
+                  float opacity);
 
     Shader        crosshairShader_;
+    Shader        barShader_;
     unsigned int  vao_ = 0;
     unsigned int  vbo_ = 0;
+
     CrosshairParams crosshair_ {};
+    HealthBarParams healthBar_ {};
+    AmmoParams      ammo_ {};
 };
 
 }  // namespace render
