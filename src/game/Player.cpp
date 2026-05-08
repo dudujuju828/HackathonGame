@@ -66,8 +66,21 @@ void Player::update(float dt, const core::Input& input, float t, float groundHei
     if (input.key(GLFW_KEY_A)) wish -= side;
     if (glm::length(wish) > 1e-4f) wish = glm::normalize(wish);
 
-    const bool sprint =
+    const bool wantsSprintKey =
         input.key(GLFW_KEY_LEFT_SHIFT) || input.key(GLFW_KEY_RIGHT_SHIFT);
+    const bool sprint = wantsSprintKey && stamina > 0.0f;
+
+    if (sprint) {
+        stamina = std::max(0.0f, stamina - 4.0f * dt);
+        staminaRegenTimer_ = 2.0f;
+    } else {
+        if (staminaRegenTimer_ > 0.0f) {
+            staminaRegenTimer_ -= dt;
+        } else {
+            stamina = std::min(maxStamina, stamina + 10.0f * dt);
+        }
+    }
+
     const float horizSpeed =
         feel_.moveSpeed * (sprint ? feel_.sprintMultiplier : 1.0f);
 

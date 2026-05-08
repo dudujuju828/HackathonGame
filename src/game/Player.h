@@ -68,15 +68,24 @@ public:
     WalkFeel&       feel()       { return feel_; }
     const WalkFeel& feel() const { return feel_; }
 
+    // Base combat/progression stats — modified by upgrades and abilities.
+    float health      = 100.0f;
+    float maxHealth   = 100.0f;
+    float damage      = 10.0f;    // damage per syringe
+    float attackSpeed = 2.0f;     // syringes per second
+    float stamina     = 20.0f;
+    float maxStamina  = 20.0f;
+
 private:
     glm::vec3 position_ { 0.0f, 0.0f, 3.0f };  // feet
     glm::vec3 velocity_ { 0.0f };
 
-    float bobPhase_     = 0.0f;
-    float bobIntensity_ = 0.0f;  // 0..1, smoothed
-    float trauma_       = 0.0f;  // 0..1
-    bool  onGround_     = true;
-    bool  prevJump_     = false;
+    float bobPhase_          = 0.0f;
+    float bobIntensity_      = 0.0f;  // 0..1, smoothed
+    float trauma_            = 0.0f;  // 0..1
+    float staminaRegenTimer_ = 0.0f;  // seconds remaining before regen starts
+    bool  onGround_          = true;
+    bool  prevJump_          = false;
 
     int level_     = 1;
     int xp_        = 0;

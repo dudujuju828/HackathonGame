@@ -6,6 +6,7 @@ enum class Scene {
     Playing,
     Settings,
     LevelUp,
+    Inventory,
 };
 
 }  // namespace game

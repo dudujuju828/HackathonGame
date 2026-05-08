@@ -9,6 +9,7 @@
 #include "game/Projectile.h"
 #include "game/Scene.h"
 #include "game/SettingsMenu.h"
+#include "game/StatsScreen.h"
 #include "game/Upgrade.h"
 #include "game/Weapon.h"
 #include "render/Camera.h"
@@ -130,7 +131,7 @@ const render::AnimationClip* runAnim = nullptr;
         weapon.setModel(&syringeModel);
         weapon.unlimited = true;
         weapon.autoFire  = true;
-        weapon.fireRate  = 1.0f;   // 1 shot/sec
+        weapon.fireRate  = 1.0f / player.attackSpeed;
         weapon.viewmodel.scale = 0.035f;
 
         std::vector<game::Projectile> projectiles;
@@ -158,8 +159,6 @@ const render::AnimationClip* runAnim = nullptr;
         if (!hud.init("assets/shaders")) {
             return 1;
         }
-        hud.healthBar().fraction = 0.62f;
-
         render::Text text;
         if (!text.init("assets/shaders/text.vert",
                        "assets/shaders/text.frag")) {
@@ -168,8 +167,10 @@ const render::AnimationClip* runAnim = nullptr;
 
         game::SettingsMenu settingsMenu;
         game::LevelUpMenu  levelUpMenu;
+        game::StatsScreen  statsScreen;
         game::Scene scene = game::Scene::Playing;
         bool prevEscape   = false;
+        bool prevB        = false;
         int  prevMapIndex = settingsMenu.settings().mapIndex;
 
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
@@ -194,6 +195,21 @@ const render::AnimationClip* runAnim = nullptr;
             }
             prevEscape = curEscape;
 
+            // B toggles the stats/inventory screen while playing.
+            const bool curB = input.key(GLFW_KEY_B);
+            if (curB && !prevB) {
+                if (scene == game::Scene::Playing) {
+                    scene = game::Scene::Inventory;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    input.resetMouseDelta();
+                } else if (scene == game::Scene::Inventory) {
+                    scene = game::Scene::Playing;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    input.resetMouseDelta();
+                }
+            }
+            prevB = curB;
+
             // Apply settings to the player camera every frame. The slider value
             // is horizontal FOV; convert to vertical FOV for glm::perspective.
             {
@@ -215,6 +231,7 @@ const render::AnimationClip* runAnim = nullptr;
                 } else {
                     float gh = terrain.heightAt(player.position().x, player.position().z);
                     player.update(dt, input, time.total(), gh);
+                    weapon.fireRate = 1.0f / player.attackSpeed;
                     weapon.update(dt, input, player);
                 }
             } else if (scene == game::Scene::Settings) {
@@ -498,9 +515,39 @@ const render::AnimationClip* runAnim = nullptr;
                 hud.xpBar().xp       = player.xp();
                 hud.xpBar().xpToNext = player.xpToNext();
 
+                // Health bar driven by actual player stats.
+                hud.healthBar().fraction =
+                    (player.maxHealth > 0.0f)
+                    ? std::clamp(player.health / player.maxHealth, 0.0f, 1.0f)
+                    : 0.0f;
+
                 hud.drawXpBar     (window.width(), window.height(), hud.xpBar());
                 hud.drawHealthBar (window.width(), window.height(), time.total(),
                                    hud.healthBar());
+
+                // Stamina bar — sits directly above the health bar, same left margin.
+                {
+                    const float margin  = hud.healthBar().marginPx.x;
+                    const float hpH     = hud.healthBar().sizePx.y;
+                    const float hpBot   = hud.healthBar().marginPx.y;  // from bottom
+                    const float stH     = 8.0f;
+                    const float gap     = 5.0f;
+                    const float stW     = hud.healthBar().sizePx.x;
+                    const float originY = static_cast<float>(window.height())
+                                         - hpBot - hpH - gap - stH;
+                    const float stFrac  = (player.maxStamina > 0.0f)
+                        ? std::clamp(player.stamina / player.maxStamina, 0.0f, 1.0f)
+                        : 0.0f;
+                    hud.drawProgress(window.width(), window.height(),
+                                     glm::vec2(margin, originY),
+                                     glm::vec2(stW, stH),
+                                     stFrac,
+                                     glm::vec3(0.20f, 0.75f, 0.85f),
+                                     glm::vec3(0.02f, 0.06f, 0.08f),
+                                     glm::vec3(0.15f, 0.45f, 0.55f),
+                                     1.0f, 0.92f);
+                }
+
                 hud.drawCrosshair (window.width(), window.height(), hud.crosshair());
 
                 // "LV N" label centred above the XP bar.
@@ -518,6 +565,16 @@ const render::AnimationClip* runAnim = nullptr;
                 settingsMenu.draw(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::LevelUp) {
                 levelUpMenu.draw(hud, text, window.width(), window.height());
+            } else if (scene == game::Scene::Inventory) {
+                game::PlayerStats ps;
+                ps.health      = player.health;
+                ps.maxHealth   = player.maxHealth;
+                ps.damage      = player.damage;
+                ps.attackSpeed = player.attackSpeed;
+                ps.stamina     = player.stamina;
+                ps.maxStamina  = player.maxStamina;
+                ps.level       = player.level();
+                statsScreen.draw(hud, text, window.width(), window.height(), ps);
             }
 
             window.swap();
