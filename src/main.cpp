@@ -272,17 +272,16 @@ int main() {
                     // Calculate a local right vector for this specific projectile's offset
                     glm::vec3 localRight = glm::normalize(glm::cross(dir, up));
 
-                    // Add a tiny bit of random spread to prevent perfect perspective eclipsing,
-                    // kept very small so the weapon remains accurate to the crosshair.
-                    float spreadX = ((std::rand() % 100) / 100.0f - 0.5f) * 0.015f;
-                    float spreadY = ((std::rand() % 100) / 100.0f - 0.5f) * 0.015f;
-                    glm::vec3 finalDir = glm::normalize(dir + localRight * spreadX + up * spreadY);
+                    // Use parallel positional offsets rather than angular spread. This guarantees
+                    // the projectiles never diverge over distance and remain perfectly tight to the crosshair.
+                    float offsetX = ((std::rand() % 100) / 100.0f - 0.5f) * 0.08f;
+                    float offsetY = ((std::rand() % 100) / 100.0f - 0.5f) * 0.08f;
 
                     game::Projectile p;
                     // Spawn slightly in front and to the right so it visually leaves
                     // the syringe tip rather than the camera centre.
-                    p.position = cam.position + finalDir * 0.45f + localRight * 0.18f - up * 0.15f;
-                    p.velocity = finalDir * projectileSpeed;
+                    p.position = cam.position + dir * 0.45f + localRight * (0.18f + offsetX) - up * (0.15f + offsetY);
+                    p.velocity = dir * projectileSpeed;
                     p.scale    = projectileScale;
                     p.maxAge   = 3.0f;
                     projectiles.push_back(p);
