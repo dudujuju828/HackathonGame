@@ -343,6 +343,7 @@ int main() {
             worldShader.use();
             checker.bind(0);
             worldShader.setInt  ("uAlbedo", 0);
+            worldShader.setInt  ("uHasBones", 0);
             worldShader.setMat4 ("uViewProj", cam.proj(window.aspect()) * cam.view());
             worldShader.setVec3 ("uCamPos", cam.position);
             worldShader.setVec3 ("uCamDir", cam.forward());
