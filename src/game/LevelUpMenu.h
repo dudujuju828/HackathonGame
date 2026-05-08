@@ -32,6 +32,7 @@ private:
     int     hoverIdx_ = -1;
     bool    prevMouse_ = false;
     bool    blockUntilRelease_ = false;
+    float   ignoreTimer_ = 0.0f;
     uint32_t rngState_ = 0x600DBEEFu;
 
     float rand01_();

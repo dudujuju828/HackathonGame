@@ -23,6 +23,8 @@ float LevelUpMenu::rand01_() {
 void LevelUpMenu::reset() {
     auto pool = getUpgradePool();
     options_.clear();
+    blockUntilRelease_ = true;
+    ignoreTimer_ = 0.4f; // 400ms delay to prevent accidental/synthetic clicks
     
     // Pick 3 unique random upgrades if possible.
     for (int i = 0; i < 3 && !pool.empty(); ++i) {
@@ -40,20 +42,28 @@ LevelUpMenu::Rect LevelUpMenu::optionRect_(int W, int H, int slotIdx) const {
     return { x0, y0, x0 + kOptionW, y0 + kOptionH };
 }
 
-std::optional<Upgrade> LevelUpMenu::update(float /*dt*/, const core::Input& input,
+std::optional<Upgrade> LevelUpMenu::update(float dt, const core::Input& input,
                                            int W, int H) {
+    ignoreTimer_ = std::max(0.0f, ignoreTimer_ - dt);
+
     const float mx = static_cast<float>(input.mouseX());
     const float my = static_cast<float>(input.mouseY());
     const bool  click = input.mouseButton(GLFW_MOUSE_BUTTON_LEFT);
     
-    if (blockUntilRelease_ && !click) {
+    if (blockUntilRelease_ && !click && ignoreTimer_ <= 0.0f) {
         blockUntilRelease_ = false;
     }
 
-    const bool  justClicked = click && !prevMouse_ && !blockUntilRelease_;
+    const bool  justClicked = click && !prevMouse_;
     prevMouse_ = click;
 
     hoverIdx_ = -1;
+
+    // Do not process hover or selection while locked
+    if (ignoreTimer_ > 0.0f || blockUntilRelease_) {
+        return std::nullopt;
+    }
+
     for (int i = 0; i < static_cast<int>(options_.size()); ++i) {
         Rect r = optionRect_(W, H, i);
         if (mx >= r.x0 && mx <= r.x1 && my >= r.y0 && my <= r.y1) {
