@@ -2,6 +2,7 @@
 #include "core/Time.h"
 #include "core/Window.h"
 #include "game/Enemy.h"
+#include "game/Terrain.h"
 #include "game/EnemySpawner.h"
 #include "game/LevelUpMenu.h"
 #include "game/Player.h"
@@ -104,8 +105,11 @@ int main() {
         auto px = makeChecker(64, 220, 220, 220, 60, 60, 60);
         checker.createRGBA(64, 64, px.data(), /*nearest=*/true);
 
+        game::Terrain terrain;
+        terrain.generate();
+
         game::Player player;
-        player.setSpawn({ 0.0f, 0.0f, 3.0f });
+        player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
 
         render::Model syringeModel;
         if (!syringeModel.loadFromFile("assets/models/syringe.glb")) {
@@ -155,7 +159,8 @@ int main() {
         game::SettingsMenu settingsMenu;
         game::LevelUpMenu  levelUpMenu;
         game::Scene scene = game::Scene::Playing;
-        bool prevEscape = false;
+        bool prevEscape   = false;
+        int  prevMapIndex = settingsMenu.settings().mapIndex;
 
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
@@ -198,7 +203,8 @@ int main() {
                     input.resetMouseDelta();
                     levelUpMenu.reset();
                 } else {
-                    player.update(dt, input, time.total());
+                    float gh = terrain.heightAt(player.position().x, player.position().z);
+                    player.update(dt, input, time.total(), gh);
                     weapon.update(dt, input, player);
                 }
             } else if (scene == game::Scene::Settings) {
@@ -239,6 +245,18 @@ int main() {
                     } else {
                         levelUpMenu.reset(); // Pick next set of options for subsequent level
                     }
+                }
+            }
+
+            // Detect map switch from the settings menu and regenerate terrain.
+            {
+                const int newMap = settingsMenu.settings().mapIndex;
+                if (newMap != prevMapIndex) {
+                    prevMapIndex = newMap;
+                    terrain.generate(newMap);
+                    player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
+                    projectiles.clear();
+                    enemies.clear();
                 }
             }
 
@@ -292,6 +310,12 @@ int main() {
                     p.maxAge   = 3.0f;
                     projectiles.push_back(p);
                 }
+            }
+
+            // Keep enemies on the terrain surface.
+            for (auto& e : enemies) {
+                if (e.alive())
+                    e.position.y = terrain.heightAt(e.position.x, e.position.z);
             }
 
             // Advance and cull projectiles.
@@ -358,25 +382,11 @@ int main() {
             worldShader.setVec3 ("uFlashColor", glm::vec3(1.2f, 1.15f, 1.0f));
             worldShader.setVec3 ("uTint", glm::vec3(1.0f));  // default for world geometry
 
-            // A small grid of cubes to wander around.
-            for (int z = -3; z <= 3; ++z) {
-                for (int x = -3; x <= 3; ++x) {
-                    if ((x + z) & 1) continue;
-                    glm::mat4 M(1.0f);
-                    M = glm::translate(M, glm::vec3(x * 2.0f, 0.5f, z * 2.0f));
-                    worldShader.setMat4("uModel", M);
-                    cube.draw();
-                }
-            }
-
-            // Floor: a flat scaled cube.
-            {
-                glm::mat4 M(1.0f);
-                M = glm::translate(M, glm::vec3(0.0f, -0.05f, 0.0f));
-                M = glm::scale(M, glm::vec3(40.0f, 0.1f, 40.0f));
-                worldShader.setMat4("uModel", M);
-                cube.draw();
-            }
+            // Terrain mesh (replaces the old flat floor + cube grid).
+            terrain.texture().bind(0);
+            worldShader.setMat4("uModel", glm::mat4(1.0f));
+            terrain.mesh().draw();
+            checker.bind(0); // restore for subsequent geometry
 
             // Enemies: tall scaled cubes tinted red so they read at a glance.
             if (!enemies.empty()) {

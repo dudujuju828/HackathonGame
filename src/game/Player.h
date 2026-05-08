@@ -42,7 +42,7 @@ public:
     Player();
 
     void setSpawn(const glm::vec3& feetPosition);
-    void update(float dt, const core::Input& input, float timeSeconds);
+    void update(float dt, const core::Input& input, float timeSeconds, float groundHeight = 0.0f);
 
     // Add to the trauma accumulator (clamped 0..1). Squared in-shader for
     // a perceptual decay curve.

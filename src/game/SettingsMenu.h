@@ -31,7 +31,7 @@ public:
 
 private:
     struct Item {
-        enum class Kind { Slider, Toggle, Button };
+        enum class Kind { Slider, Toggle, Button, Cycle };
 
         Kind        kind;
         const char* label;
@@ -47,6 +47,11 @@ private:
 
         // Button only.
         MenuAction  action      = MenuAction::None;
+
+        // Cycle only — click left half to go back, right half to go forward.
+        int*        cycleValue  = nullptr;
+        int         cycleCount  = 0;
+        const char* const* cycleNames = nullptr;
     };
 
     struct Rect { float x0, y0, x1, y1; };

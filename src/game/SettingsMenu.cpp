@@ -15,7 +15,7 @@ namespace game {
 
 namespace {
 constexpr float kPanelW       = 540.0f;
-constexpr float kPanelH       = 400.0f;
+constexpr float kPanelH       = 460.0f;
 constexpr float kTrackHalfW   = 250.0f;
 constexpr float kTrackThick   =   8.0f;
 constexpr float kTrackHitPad  =  12.0f;
@@ -44,16 +44,24 @@ void SettingsMenu::buildItems_(std::vector<Item>& out) {
     s2.yOffsetPx = 180.0f;
     out.push_back(s2);
 
+    Item c{};
+    c.kind = Item::Kind::Cycle; c.label = "MAP";
+    c.cycleValue = &settings_.mapIndex;
+    c.cycleCount = Settings::kMapCount;
+    c.cycleNames = Settings::kMapNames;
+    c.yOffsetPx = 250.0f;
+    out.push_back(c);
+
     Item t{};
     t.kind = Item::Kind::Toggle; t.label = "FULLSCREEN";
     t.toggleValue = &settings_.fullscreen;
-    t.yOffsetPx = 250.0f;
+    t.yOffsetPx = 320.0f;
     out.push_back(t);
 
     Item b{};
     b.kind = Item::Kind::Button; b.label = "EXIT GAME";
     b.action = MenuAction::ExitGame;
-    b.yOffsetPx = 320.0f;
+    b.yOffsetPx = 390.0f;
     out.push_back(b);
 }
 
@@ -76,6 +84,7 @@ SettingsMenu::Rect SettingsMenu::hitRect_(int W, int H, const Item& it) const {
                      t.x1 + kThumbHalfW, t.y1 + kTrackHitPad };
         }
         case Item::Kind::Toggle:
+        case Item::Kind::Cycle:
             return { cx - kToggleHalfW, yC - kToggleHalfH,
                      cx + kToggleHalfW, yC + kToggleHalfH };
         case Item::Kind::Button:
@@ -112,6 +121,17 @@ MenuAction SettingsMenu::update(float /*dt*/, const core::Input& input,
                 case Item::Kind::Toggle:
                     if (items[i].toggleValue) {
                         *items[i].toggleValue = !*items[i].toggleValue;
+                    }
+                    break;
+                case Item::Kind::Cycle:
+                    if (items[i].cycleValue && items[i].cycleCount > 0) {
+                        const Rect r = hitRect_(W, H, items[i]);
+                        const float midX = (r.x0 + r.x1) * 0.5f;
+                        int& v = *items[i].cycleValue;
+                        if (mx < midX)
+                            v = (v - 1 + items[i].cycleCount) % items[i].cycleCount;
+                        else
+                            v = (v + 1) % items[i].cycleCount;
                     }
                     break;
                 case Item::Kind::Button:
@@ -214,6 +234,35 @@ void SettingsMenu::draw(render::Hud& hud, render::Text& text, int W, int H) {
                 text.draw(W, H, t.x0, t.y1 + kRangeOffset, lo, rScale, hintColor);
                 text.draw(W, H, t.x1 - render::Text::measure(hi) * rScale,
                           t.y1 + kRangeOffset, hi, rScale, hintColor);
+                break;
+            }
+            case Item::Kind::Cycle: {
+                // Label on the left; arrows + name pill on the right.
+                const std::string label = it.label;
+                const float lScale = 2.0f;
+                text.draw(W, H, cx - kToggleHalfW + 4.0f, yC - 8.0f,
+                          label, lScale, labelColor);
+
+                const float pillW = 220.0f;
+                const float pillH = 22.0f;
+                const float pillX = cx + kToggleHalfW - pillW - 4.0f;
+                const float pillY = yC - pillH * 0.5f;
+                hud.drawProgress(W, H,
+                                 glm::vec2(pillX, pillY),
+                                 glm::vec2(pillW, pillH),
+                                 1.0f, togglePillOff, togglePillOff, togglePillBdr,
+                                 1.0f, 0.95f);
+
+                const char* name = (it.cycleValue && it.cycleCount > 0 && it.cycleNames)
+                                   ? it.cycleNames[*it.cycleValue]
+                                   : "?";
+                const std::string display = std::string("< ") + name + " >";
+                const float dScale = 1.5f;
+                const float dW = render::Text::measure(display) * dScale;
+                text.draw(W, H, pillX + (pillW - dW) * 0.5f,
+                          pillY + (pillH - 7.0f * dScale) * 0.5f,
+                          display, dScale,
+                          glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
                 break;
             }
             case Item::Kind::Toggle: {

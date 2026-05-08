@@ -50,7 +50,7 @@ void Player::setProgress(int level, int xp) {
     xpToNext_  = 100 * level_;
 }
 
-void Player::update(float dt, const core::Input& input, float t) {
+void Player::update(float dt, const core::Input& input, float t, float groundHeight) {
     // Mouse look (advances yaw/pitch on the camera).
     camera_.addLook(input.mouseDX(), input.mouseDY());
 
@@ -86,9 +86,9 @@ void Player::update(float dt, const core::Input& input, float t) {
     velocity_.z = wish.z * horizSpeed;
     position_ += velocity_ * dt;
 
-    // Ground plane clamp at y=0. (Real collision arrives with the level.)
-    if (position_.y <= 0.0f) {
-        position_.y = 0.0f;
+    // Clamp feet to terrain surface.
+    if (position_.y <= groundHeight) {
+        position_.y = groundHeight;
         if (velocity_.y < 0.0f) velocity_.y = 0.0f;
         onGround_ = true;
     }
