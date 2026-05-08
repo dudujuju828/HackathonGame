@@ -29,6 +29,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 namespace {
@@ -251,17 +252,40 @@ int main() {
             if (scene == game::Scene::Playing) {
             // Spawn a projectile on the fire frame.
             if (weapon.firedThisFrame()) {
-                glm::vec3 fwd   = cam.forward();
-                glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0,1,0)));
-                glm::vec3 up    = glm::cross(right, fwd);
-                game::Projectile p;
-                // Spawn slightly in front and to the right so it visually leaves
-                // the syringe tip rather than the camera centre.
-                p.position = cam.position + fwd * 0.45f + right * 0.18f - up * 0.15f;
-                p.velocity = fwd * projectileSpeed;
-                p.scale    = projectileScale;
-                p.maxAge   = 3.0f;
-                projectiles.push_back(p);
+                glm::vec3 baseFwd   = cam.forward();
+                glm::vec3 baseRight = glm::normalize(glm::cross(baseFwd, glm::vec3(0,1,0)));
+                glm::vec3 up        = glm::cross(baseRight, baseFwd);
+
+                const int cols = weapon.fanColumns;
+                const float startAngle = (cols > 1) ? -weapon.fanSpreadDeg * 0.5f : 0.0f;
+                const float stepAngle  = (cols > 1) ? weapon.fanSpreadDeg / (cols - 1) : 0.0f;
+
+                for (int i = 0; i < cols; ++i) {
+                    float deg = startAngle + i * stepAngle;
+                    float rad = glm::radians(deg);
+
+                    // Rotate the forward vector around the 'up' axis by 'rad'
+                    glm::vec3 dir = glm::normalize(
+                        baseFwd * std::cos(rad) + baseRight * std::sin(rad)
+                    );
+
+                    // Calculate a local right vector for this specific projectile's offset
+                    glm::vec3 localRight = glm::normalize(glm::cross(dir, up));
+
+                    // Add a tiny bit of random spread to prevent perfect perspective eclipsing
+                    float spreadX = ((std::rand() % 100) / 100.0f - 0.5f) * 0.05f;
+                    float spreadY = ((std::rand() % 100) / 100.0f - 0.5f) * 0.05f;
+                    glm::vec3 finalDir = glm::normalize(dir + localRight * spreadX + up * spreadY);
+
+                    game::Projectile p;
+                    // Spawn slightly in front and to the right so it visually leaves
+                    // the syringe tip rather than the camera centre.
+                    p.position = cam.position + finalDir * 0.45f + localRight * 0.18f - up * 0.15f;
+                    p.velocity = finalDir * projectileSpeed;
+                    p.scale    = projectileScale;
+                    p.maxAge   = 3.0f;
+                    projectiles.push_back(p);
+                }
             }
 
             // Advance and cull projectiles.
