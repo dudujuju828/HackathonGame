@@ -66,9 +66,18 @@ void main() {
     float n = hash21(gl_FragCoord.xy + vec2(uTime * 73.0, uTime * 37.0));
     col += (n - 0.5) * uNoise;
 
-    // Slow brightness flicker (two interfering low-freq sines).
-    float fk = 1.0 + (sin(uTime * 13.7) + sin(uTime * 7.3)) * 0.012 * uFlicker;
-    col *= fk;
+    // Active flicker: constant wobble + occasional sharp dropouts.
+    // Wobble is a beat between two low-freq sines so the breathing isn't periodic.
+    float wobble = (sin(uTime * 13.7) + sin(uTime * 7.3)) * 0.04;
+    // Dropouts: per-time-bucket hash; only the brightest hashes trigger a dim.
+    float bucket = floor(uTime * 24.0);
+    float h      = hash21(vec2(bucket, 7.0));
+    float drop   = smoothstep(0.86, 0.96, h) * 0.35;
+    // Brief horizontal "tear" band when a dropout triggers.
+    float tearBand = smoothstep(0.02, 0.0, abs(uv.y - hash21(vec2(bucket, 13.0))));
+    float tear     = drop * tearBand * 0.6;
+    float fk = 1.0 + (wobble - drop - tear) * uFlicker;
+    col *= max(fk, 0.0);
 
     FragColor = vec4(col, 1.0);
 }

@@ -10,14 +10,14 @@ namespace render {
 // Tunable parameters for the CRT post effect. Defaults aim at
 // "moderate horror VHS" — visible but not nauseating.
 struct CrtParams {
-    float curvature        = 0.08f;   // 0 = flat, 0.15+ = bulgy
-    float scanlineStrength = 0.30f;   // 0..1
+    float curvature        = 0.12f;   // 0 = flat, 0.15+ = bulgy
+    float scanlineStrength = 0.50f;   // 0..1
     float scanlineCount    = 280.0f;  // virtual scanlines (resolution-independent)
-    float aberrationPx     = 1.5f;    // RGB shift in pixels at screen edge
-    float vignette         = 0.55f;   // 0..1
-    float noise            = 0.06f;   // 0..1, animated grain
-    float flicker          = 0.6f;    // 0..1, slow brightness wobble
-    float maskStrength     = 0.10f;   // 0..1, RGB phosphor sub-pixel tint
+    float aberrationPx     = 2.5f;    // RGB shift in pixels at screen edge
+    float vignette         = 0.85f;   // 0..1
+    float noise            = 0.10f;   // 0..1, animated grain
+    float flicker          = 1.2f;    // 0..2, brightness wobble + dropouts
+    float maskStrength     = 0.18f;   // 0..1, RGB phosphor sub-pixel tint
 };
 
 class PostFx {
