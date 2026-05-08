@@ -408,8 +408,8 @@ const render::AnimationClip* runAnim = nullptr;
 
                 for (const auto& e : enemies) {
                     glm::mat4 M(1.0f);
-                    // The Harpy model origin is centered. Lift it by half its height so its feet touch the floor.
-                    M = glm::translate(M, e.position + glm::vec3(0.0f, game::kEnemyHeight * 0.5f, 0.0f));
+                    // The Harpy model origin is centered. Lift it so its feet touch the floor.
+                    M = glm::translate(M, e.position + glm::vec3(0.0f, game::kEnemyHeight, 0.0f));
                     
                     // Rotate to face velocity
                     if (glm::length(e.velocity) > 1e-4f) {
@@ -418,7 +418,7 @@ const render::AnimationClip* runAnim = nullptr;
                         M = glm::rotate(M, angle, glm::vec3(0.0f, 1.0f, 0.0f));
                     }
                     
-                    M = glm::scale(M, glm::vec3(0.4f)); 
+                    M = glm::scale(M, glm::vec3(0.3f)); 
                     worldShader.setMat4("uModel", M);
 
                     if (hasBones) {
