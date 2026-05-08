@@ -2,7 +2,9 @@
 #include "core/Time.h"
 #include "core/Window.h"
 #include "render/Camera.h"
+#include "render/Framebuffer.h"
 #include "render/Mesh.h"
+#include "render/PostFx.h"
 #include "render/Shader.h"
 #include "render/Texture.h"
 
@@ -92,6 +94,15 @@ int main() {
 
         const float moveSpeed = 4.0f;
 
+        render::Framebuffer sceneFbo;
+        sceneFbo.resize(window.width(), window.height());
+
+        render::PostFx postFx;
+        if (!postFx.init("assets/shaders/post_crt.vert",
+                         "assets/shaders/post_crt.frag")) {
+            return 1;
+        }
+
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
         while (!window.shouldClose()) {
@@ -119,6 +130,9 @@ int main() {
                 cam.position += wish;
             }
 
+            // Keep the scene FBO matched to the window size.
+            sceneFbo.resize(window.width(), window.height());
+            sceneFbo.bind();
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             worldShader.use();
@@ -151,6 +165,14 @@ int main() {
                 worldShader.setMat4("uModel", M);
                 cube.draw();
             }
+
+            // Post-process pass to default framebuffer.
+            render::Framebuffer::bindDefault(window.width(), window.height());
+            glClear(GL_COLOR_BUFFER_BIT);
+            postFx.apply(sceneFbo.colorTexture(),
+                         window.width(), window.height(),
+                         time.total(),
+                         postFx.params());
 
             window.swap();
         }
