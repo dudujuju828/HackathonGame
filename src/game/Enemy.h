@@ -1,5 +1,6 @@
 #pragma once
 
+#include "render/Animator.h"
 #include <glm/glm.hpp>
 
 namespace game {
@@ -15,6 +16,8 @@ struct Enemy {
     glm::vec3 position { 0.0f };
     glm::vec3 velocity { 0.0f };
     int       hp       = kEnemyMaxHp;
+
+    render::Animator animator;
 
     bool alive() const { return hp > 0; }
 

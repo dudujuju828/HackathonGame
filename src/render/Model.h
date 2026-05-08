@@ -1,11 +1,13 @@
 #pragma once
 
+#include "Animation.h"
 #include "Mesh.h"
 #include "Texture.h"
 
 #include <glm/glm.hpp>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,15 +34,23 @@ public:
     // Dispatches to OBJ or glTF/GLB loader based on file extension.
     bool loadFromFile(const std::string& path);
 
-    void clear() { meshes_.clear(); }
+    void clear() {
+        meshes_.clear();
+        skeleton_ = std::nullopt;
+        animations_.clear();
+    }
 
     const std::vector<ModelMesh>& meshes() const { return meshes_; }
+    const std::optional<Skeleton>& skeleton() const { return skeleton_; }
+    const std::vector<AnimationClip>& animations() const { return animations_; }
 
 private:
     bool loadOBJ_(const std::string& path);
     bool loadGLB_(const std::string& path);
 
-    std::vector<ModelMesh> meshes_;
+    std::vector<ModelMesh>     meshes_;
+    std::optional<Skeleton>    skeleton_;
+    std::vector<AnimationClip> animations_;
 };
 
 }  // namespace render

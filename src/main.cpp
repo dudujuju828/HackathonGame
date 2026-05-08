@@ -53,10 +53,10 @@ void buildCube(std::vector<render::Vertex>& verts, std::vector<uint32_t>& idx) {
     };
     for (const auto& f : faces) {
         uint32_t base = static_cast<uint32_t>(verts.size());
-        verts.push_back({f.a, f.n, {0, 0}});
-        verts.push_back({f.b, f.n, {1, 0}});
-        verts.push_back({f.c, f.n, {1, 1}});
-        verts.push_back({f.d, f.n, {0, 1}});
+        verts.push_back({f.a, f.n, {0, 0}, glm::ivec4(0), glm::vec4(0.0f)});
+        verts.push_back({f.b, f.n, {1, 0}, glm::ivec4(0), glm::vec4(0.0f)});
+        verts.push_back({f.c, f.n, {1, 1}, glm::ivec4(0), glm::vec4(0.0f)});
+        verts.push_back({f.d, f.n, {0, 1}, glm::ivec4(0), glm::vec4(0.0f)});
         idx.insert(idx.end(), {base+0, base+1, base+2, base+0, base+2, base+3});
     }
 }
@@ -114,6 +114,16 @@ int main() {
         render::Model syringeModel;
         if (!syringeModel.loadFromFile("assets/models/syringe.glb")) {
             std::fprintf(stderr, "[main] failed to load syringe model\n");
+        }
+
+        render::Model enemyModel;
+        if (!enemyModel.loadFromFile("assets/models/Harpy.glb")) {
+            std::fprintf(stderr, "[main] failed to load enemy model\n");
+        }
+        if(enemyModel.skeleton()){printf("Harpy has skeleton with %zu joints\n", enemyModel.skeleton()->joints.size());}else{printf("Harpy has NO skeleton!\n");}
+const render::AnimationClip* runAnim = nullptr;
+        if (!enemyModel.animations().empty()) {
+            runAnim = &enemyModel.animations()[0];
         }
 
         game::Weapon weapon;
@@ -324,9 +334,20 @@ int main() {
                 p.age      += dt;
             }
             // Spawn + advance enemies (also gated by Playing scene).
+            size_t oldSize = enemies.size();
             spawner.update(dt, enemies, player.position());
+            for (size_t i = oldSize; i < enemies.size(); ++i) {
+                enemies[i].animator.setAnimation(runAnim);
+            }
+
             for (auto& e : enemies) {
-                if (e.alive()) e.update(dt, player.position());
+                if (e.alive()) {
+                    e.update(dt, player.position());
+                    e.animator.update(dt);
+                    if (enemyModel.skeleton()) {
+                        e.animator.calculateBoneTransforms(&enemyModel.skeleton().value());
+                    }
+                }
             }
 
             // Projectile <-> enemy hit detection. Sphere-vs-point. First alive
@@ -367,6 +388,7 @@ int main() {
             worldShader.use();
             checker.bind(0);
             worldShader.setInt  ("uAlbedo", 0);
+            worldShader.setInt  ("uHasBones", 0);
             worldShader.setMat4 ("uViewProj", cam.proj(window.aspect()) * cam.view());
             worldShader.setVec3 ("uCamPos", cam.position);
             worldShader.setVec3 ("uCamDir", cam.forward());
@@ -388,18 +410,42 @@ int main() {
             terrain.mesh().draw();
             checker.bind(0); // restore for subsequent geometry
 
-            // Enemies: tall scaled cubes tinted red so they read at a glance.
+            // Enemies: animated Harpy models.
             if (!enemies.empty()) {
-                worldShader.setVec3("uTint", glm::vec3(1.5f, 0.30f, 0.30f));
+                worldShader.setVec3("uTint", glm::vec3(1.0f));
+                bool hasBones = enemyModel.skeleton().has_value();
+                worldShader.setInt("uHasBones", hasBones ? 1 : 0);
+
                 for (const auto& e : enemies) {
                     glm::mat4 M(1.0f);
-                    M = glm::translate(M, e.position +
-                                          glm::vec3(0.0f, game::kEnemyHeight * 0.5f, 0.0f));
-                    M = glm::scale(M, glm::vec3(0.7f, game::kEnemyHeight, 0.7f));
+                    // The Harpy model origin is centered. Lift it so its feet touch the floor.
+                    M = glm::translate(M, e.position + glm::vec3(0.0f, game::kEnemyHeight, 0.0f));
+                    
+                    // Rotate to face velocity
+                    if (glm::length(e.velocity) > 1e-4f) {
+                        glm::vec3 fwd = glm::normalize(e.velocity);
+                        float angle = std::atan2(fwd.x, fwd.z);
+                        M = glm::rotate(M, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+                    }
+                    
+                    M = glm::scale(M, glm::vec3(0.3f)); 
                     worldShader.setMat4("uModel", M);
-                    cube.draw();
+
+                    if (hasBones) {
+                        const auto& matrices = e.animator.finalBoneMatrices();
+                        for (size_t i = 0; i < matrices.size() && i < 100; ++i) {
+                            char buf[32];
+                            std::snprintf(buf, sizeof(buf), "uBones[%zu]", i);
+                            worldShader.setMat4(buf, matrices[i]);
+                        }
+                    }
+
+                    for (const auto& sub : enemyModel.meshes()) {
+                        if (sub.diffuse) sub.diffuse->bind(0);
+                        sub.mesh.draw();
+                    }
                 }
-                worldShader.setVec3("uTint", glm::vec3(1.0f));
+                worldShader.setInt("uHasBones", 0);
             }
 
             // In-flight projectiles (depth-tested against the world).
@@ -482,3 +528,5 @@ int main() {
     }
     return 0;
 }
+
+
