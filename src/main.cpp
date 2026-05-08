@@ -2,6 +2,7 @@
 #include "core/Time.h"
 #include "core/Window.h"
 #include "game/Player.h"
+#include "game/Projectile.h"
 #include "game/Weapon.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
@@ -16,7 +17,9 @@
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -107,6 +110,11 @@ int main() {
         weapon.ammo     = 6;
         weapon.viewmodel.scale = 0.05f;
 
+        std::vector<game::Projectile> projectiles;
+        projectiles.reserve(64);
+        const float projectileSpeed = 8.0f;  // m/s — slow enough to read visually
+        const float projectileScale = 0.05f; // match the held viewmodel
+
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
 
@@ -135,6 +143,31 @@ int main() {
             player.update(dt, input, time.total());
             weapon.update(dt, input, player);
             const render::Camera& cam = player.camera();
+
+            // Spawn a projectile on the fire frame.
+            if (weapon.firedThisFrame()) {
+                glm::vec3 fwd   = cam.forward();
+                glm::vec3 right = glm::normalize(glm::cross(fwd, glm::vec3(0,1,0)));
+                glm::vec3 up    = glm::cross(right, fwd);
+                game::Projectile p;
+                // Spawn slightly in front and to the right so it visually leaves
+                // the syringe tip rather than the camera centre.
+                p.position = cam.position + fwd * 0.45f + right * 0.18f - up * 0.15f;
+                p.velocity = fwd * projectileSpeed;
+                p.scale    = projectileScale;
+                p.maxAge   = 3.0f;
+                projectiles.push_back(p);
+            }
+
+            // Advance and cull projectiles.
+            for (auto& p : projectiles) {
+                p.position += p.velocity * dt;
+                p.age      += dt;
+            }
+            projectiles.erase(
+                std::remove_if(projectiles.begin(), projectiles.end(),
+                               [](const game::Projectile& p){ return !p.alive(); }),
+                projectiles.end());
 
             // Keep the scene FBO matched to the window size.
             sceneFbo.resize(window.width(), window.height());
@@ -170,6 +203,36 @@ int main() {
                 M = glm::scale(M, glm::vec3(40.0f, 0.1f, 40.0f));
                 worldShader.setMat4("uModel", M);
                 cube.draw();
+            }
+
+            // In-flight projectiles (depth-tested against the world).
+            if (!projectiles.empty()) {
+                GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
+                glDisable(GL_CULL_FACE);
+                for (const auto& p : projectiles) {
+                    glm::vec3 vfwd = glm::length(p.velocity) > 1e-4f
+                                       ? glm::normalize(p.velocity)
+                                       : glm::vec3(0, 0, -1);
+                    glm::vec3 ref  = std::abs(vfwd.y) > 0.99f
+                                       ? glm::vec3(1, 0, 0)
+                                       : glm::vec3(0, 1, 0);
+                    glm::vec3 vrt  = glm::normalize(glm::cross(vfwd, ref));
+                    glm::vec3 vup  = glm::cross(vrt, vfwd);
+
+                    glm::mat4 M(1.0f);
+                    M[0] = glm::vec4(vrt,         0.0f);
+                    M[1] = glm::vec4(vup,         0.0f);
+                    M[2] = glm::vec4(-vfwd,       0.0f);
+                    M[3] = glm::vec4(p.position,  1.0f);
+                    M = glm::scale(M, glm::vec3(p.scale));
+
+                    worldShader.setMat4("uModel", M);
+                    for (const auto& sub : syringeModel.meshes()) {
+                        if (sub.diffuse) sub.diffuse->bind(0);
+                        sub.mesh.draw();
+                    }
+                }
+                if (cullWas) glEnable(GL_CULL_FACE);
             }
 
             // Held viewmodel: clear depth so the syringe never clips into walls.
