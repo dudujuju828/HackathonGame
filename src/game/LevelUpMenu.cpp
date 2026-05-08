@@ -45,7 +45,12 @@ std::optional<Upgrade> LevelUpMenu::update(float /*dt*/, const core::Input& inpu
     const float mx = static_cast<float>(input.mouseX());
     const float my = static_cast<float>(input.mouseY());
     const bool  click = input.mouseButton(GLFW_MOUSE_BUTTON_LEFT);
-    const bool  justClicked = click && !prevMouse_;
+    
+    if (blockUntilRelease_ && !click) {
+        blockUntilRelease_ = false;
+    }
+
+    const bool  justClicked = click && !prevMouse_ && !blockUntilRelease_;
     prevMouse_ = click;
 
     hoverIdx_ = -1;

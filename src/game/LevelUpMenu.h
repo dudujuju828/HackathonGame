@@ -31,6 +31,7 @@ private:
     std::vector<Upgrade> options_;
     int     hoverIdx_ = -1;
     bool    prevMouse_ = false;
+    bool    blockUntilRelease_ = false;
     uint32_t rngState_ = 0x600DBEEFu;
 
     float rand01_();
