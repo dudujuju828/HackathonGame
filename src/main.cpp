@@ -116,7 +116,7 @@ int main() {
         weapon.setModel(&syringeModel);
         weapon.unlimited = true;
         weapon.autoFire  = true;
-        weapon.fireRate  = 0.2f;   // 5 shots/sec cap
+        weapon.fireRate  = 1.0f;   // 1 shot/sec
         weapon.viewmodel.scale = 0.035f;
 
         std::vector<game::Projectile> projectiles;
