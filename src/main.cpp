@@ -52,10 +52,10 @@ void buildCube(std::vector<render::Vertex>& verts, std::vector<uint32_t>& idx) {
     };
     for (const auto& f : faces) {
         uint32_t base = static_cast<uint32_t>(verts.size());
-        verts.push_back({f.a, f.n, {0, 0}});
-        verts.push_back({f.b, f.n, {1, 0}});
-        verts.push_back({f.c, f.n, {1, 1}});
-        verts.push_back({f.d, f.n, {0, 1}});
+        verts.push_back({f.a, f.n, {0, 0}, glm::ivec4(0), glm::vec4(0.0f)});
+        verts.push_back({f.b, f.n, {1, 0}, glm::ivec4(0), glm::vec4(0.0f)});
+        verts.push_back({f.c, f.n, {1, 1}, glm::ivec4(0), glm::vec4(0.0f)});
+        verts.push_back({f.d, f.n, {0, 1}, glm::ivec4(0), glm::vec4(0.0f)});
         idx.insert(idx.end(), {base+0, base+1, base+2, base+0, base+2, base+3});
     }
 }
