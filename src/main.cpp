@@ -113,7 +113,7 @@ int main() {
 
         std::vector<game::Projectile> projectiles;
         projectiles.reserve(64);
-        const float projectileSpeed = 14.0f;  // m/s
+        const float projectileSpeed = 25.0f;  // m/s
         const float projectileScale = 0.05f;  // match the held viewmodel
         const float projectileShrink = 0.75f; // 0..1, fraction of scale lost by maxAge
 
