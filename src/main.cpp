@@ -272,10 +272,16 @@ int main() {
                     // Calculate a local right vector for this specific projectile's offset
                     glm::vec3 localRight = glm::normalize(glm::cross(dir, up));
 
-                    // Use parallel positional offsets rather than angular spread. This guarantees
-                    // the projectiles never diverge over distance and remain perfectly tight to the crosshair.
-                    float offsetX = ((std::rand() % 100) / 100.0f - 0.5f) * 0.08f;
-                    float offsetY = ((std::rand() % 100) / 100.0f - 0.5f) * 0.08f;
+                    // Use deterministic parallel positional offsets based on the burst index.
+                    // This creates a precise "twin-blade" pattern that never diverges over distance.
+                    int burstIndex = weapon.projectileCount - weapon.burstRemaining() - 1;
+                    
+                    // Center the pattern based on the total burst count.
+                    float centeredIndex = static_cast<float>(burstIndex) - (weapon.projectileCount - 1) * 0.5f;
+                    
+                    // Multiply by a small spacing value (6 centimeters) to create a tight side-by-side blade
+                    float offsetX = centeredIndex * 0.06f;
+                    float offsetY = 0.0f;
 
                     game::Projectile p;
                     // Spawn slightly in front and to the right so it visually leaves

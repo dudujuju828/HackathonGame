@@ -48,6 +48,7 @@ public:
     ViewmodelTransform viewmodel {};
 
     bool firedThisFrame() const { return firedThisFrame_; }
+    int  burstRemaining() const { return burstRemaining_; }
 
 private:
     glm::mat4 worldMatrix_(const render::Camera& cam) const;
