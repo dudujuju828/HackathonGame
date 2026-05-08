@@ -8,16 +8,26 @@
 
 namespace game {
 
-// Per-map noise domain offsets — large values jump to a different region of the
-// Perlin space so each map looks completely distinct.
-struct NoiseOffset { float x, z; };
-static constexpr NoiseOffset kMapOffsets[] = {
-    {   0.0f,   0.0f },   // Hollow Creek (default)
-    {  50.0f,  75.0f },   // Ashwood
-    { 120.0f,  30.0f },   // The Mire
+struct MapDef {
+    float offX, offZ;         // noise-domain origin (large = different region)
+    float amplitude;          // max height deviation in metres
+    float f1, w1;             // octave 1: base frequency scale, weight
+    float f2, w2;             // octave 2
+    float f3, w3;             // octave 3
 };
-static constexpr int kMapOffsetCount =
-    static_cast<int>(sizeof(kMapOffsets) / sizeof(kMapOffsets[0]));
+
+// Each map has its own noise character, not just a coordinate shift.
+//
+// Hollow Creek: gentle countryside — moderate hills, balanced octaves.
+// Ashwood:      dramatic highlands — tall sweeping ridges, minimal fine detail.
+// The Mire:     flat swamp — very low amplitude, bumpy surface texture dominates.
+static constexpr MapDef kMapDefs[] = {
+    {   0.0f,   0.0f,  2.5f,  0.012f, 0.60f,  0.042f, 0.30f,  0.110f, 0.10f },
+    {  50.0f,  75.0f,  5.5f,  0.007f, 0.75f,  0.028f, 0.18f,  0.090f, 0.07f },
+    { 120.0f,  30.0f,  1.0f,  0.005f, 0.20f,  0.060f, 0.45f,  0.180f, 0.35f },
+};
+static constexpr int kMapDefCount =
+    static_cast<int>(sizeof(kMapDefs) / sizeof(kMapDefs[0]));
 
 // Four quadrants of the 128x128 map.
 const ZoneInfo Terrain::kZones[4] = {
@@ -93,9 +103,7 @@ float Terrain::perlin(float x, float y) {
 }
 
 void Terrain::generate(int mapIndex) {
-    const int safeIdx = (mapIndex >= 0 && mapIndex < kMapOffsetCount) ? mapIndex : 0;
-    const float offX = kMapOffsets[safeIdx].x;
-    const float offZ = kMapOffsets[safeIdx].z;
+    const MapDef& m = kMapDefs[(mapIndex >= 0 && mapIndex < kMapDefCount) ? mapIndex : 0];
 
     const float step = kWorldSize / static_cast<float>(kGrid - 1);
 
@@ -104,19 +112,11 @@ void Terrain::generate(int mapIndex) {
             float wx = -kWorldSize * 0.5f + static_cast<float>(i) * step;
             float wz = -kWorldSize * 0.5f + static_cast<float>(j) * step;
 
-            // Scale world position into noise domain.
-            // 0.012 gives a period of ~83 m — gentle, map-scale undulations.
-            // offX/offZ shift into a distinct region of noise space per map.
-            float nx = wx * 0.012f + offX;
-            float nz = wz * 0.012f + offZ;
+            float h = m.w1 * perlin(wx * m.f1 + m.offX, wz * m.f1 + m.offZ)
+                    + m.w2 * perlin(wx * m.f2 + m.offX, wz * m.f2 + m.offZ)
+                    + m.w3 * perlin(wx * m.f3 + m.offX, wz * m.f3 + m.offZ);
 
-            // Three octaves: large hills dominate, medium bumps add texture,
-            // fine detail roughens the surface slightly.
-            float h = 0.60f * perlin(nx,         nz)
-                    + 0.30f * perlin(nx * 3.5f,   nz * 3.5f)
-                    + 0.10f * perlin(nx * 9.0f,   nz * 9.0f);
-
-            heights_[i][j] = h * kMaxHeight;
+            heights_[i][j] = h * m.amplitude;
         }
     }
 
