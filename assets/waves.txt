@@ -4,78 +4,80 @@
 #   WAVE "Display Name" duration_sec
 #   GROUP at_sec  Name count [Name count ...]
 #
-# - Groups within a wave fire when wave-elapsed >= at_sec.
-# - The wave ends after duration_sec (any unspawned groups skip).
-# - Enemy names are case-insensitive: Harpy, Bulldog, Cat, Pig, Chicken.
-# - Comments (#) and blank lines are ignored.
-#
-# Design notes (game-designer pass):
-#  - Wave 1-2: tutorial pacing, just Cat and Chicken (low HP). Player learns
-#    movement, manual fire, and the rhythm of the auto-ring if they get one.
-#  - Wave 3 introduces Harpy. Wave 5 introduces Bulldog (the first real tank).
-#    Wave 7 introduces Pig (medium tank, slow drop pacing).
-#  - Each wave has 3-5 groups with breathing room between them so the
-#    player can collect chests without being immediately swarmed.
-#  - Final wave (10) is climactic: every type, sustained pressure, no breather.
+# Designer pass v3 (cruel): groups packed close together for sustained
+# on-screen pressure. Combined with HP bumps (Cat 2 / Chicken 4 / Harpy 8 /
+# Pig 14 / Bulldog 20) the player has to thin the swarm constantly or
+# get overwhelmed.
 
-WAVE "First Contact" 25
-GROUP  0   Cat 2
-GROUP  9   Chicken 2
-GROUP 18   Cat 3
+WAVE "First Contact" 30
+GROUP  0   Cat 8 Chicken 4
+GROUP  6   Chicken 8
+GROUP 14   Cat 10 Chicken 6
+GROUP 22   Chicken 10 Cat 6
 
-WAVE "Murmur" 30
-GROUP  0   Chicken 3
-GROUP 10   Cat 4
-GROUP 22   Cat 2 Chicken 2
+WAVE "Murmur" 35
+GROUP  0   Chicken 12 Cat 6
+GROUP  7   Cat 14
+GROUP 15   Chicken 12 Cat 8
+GROUP 24   Cat 16 Chicken 8
 
-WAVE "Wings" 35
-GROUP  0   Harpy 1
-GROUP  8   Cat 3 Chicken 1
-GROUP 18   Harpy 2
-GROUP 28   Chicken 4 Cat 2
+WAVE "Wings" 40
+GROUP  0   Harpy 6 Cat 8
+GROUP  7   Cat 12 Chicken 8
+GROUP 16   Harpy 8 Chicken 6
+GROUP 26   Chicken 14 Cat 10
+GROUP 34   Harpy 6 Cat 8
 
-WAVE "Pestilence" 40
-GROUP  0   Cat 5 Chicken 3
-GROUP 12   Harpy 3
-GROUP 24   Cat 4 Chicken 4
-GROUP 34   Harpy 2 Cat 3
+WAVE "Pestilence" 45
+GROUP  0   Cat 16 Chicken 12
+GROUP  9   Harpy 10
+GROUP 18   Cat 14 Chicken 14
+GROUP 28   Harpy 8 Cat 12
+GROUP 38   Chicken 16 Harpy 6
 
-WAVE "Snarl" 45
-GROUP  0   Bulldog 1
-GROUP  8   Chicken 4
-GROUP 20   Cat 5 Harpy 2
-GROUP 33   Bulldog 2 Chicken 3
+WAVE "Snarl" 50
+GROUP  0   Bulldog 4 Chicken 8
+GROUP  8   Chicken 14 Cat 8
+GROUP 18   Cat 16 Harpy 8
+GROUP 30   Bulldog 6 Chicken 12
+GROUP 42   Cat 12 Harpy 6 Bulldog 3
 
-WAVE "Pack" 50
-GROUP  0   Bulldog 2 Cat 4
-GROUP 14   Chicken 5 Harpy 2
-GROUP 28   Bulldog 3
-GROUP 42   Cat 5 Chicken 4 Harpy 2
+WAVE "Pack" 55
+GROUP  0   Bulldog 6 Cat 12
+GROUP 10   Chicken 16 Harpy 8
+GROUP 22   Bulldog 8 Cat 10
+GROUP 34   Chicken 14 Harpy 8
+GROUP 46   Cat 16 Chicken 14 Harpy 6 Bulldog 4
 
-WAVE "Glutton" 50
-GROUP  0   Pig 2
-GROUP 12   Bulldog 1 Cat 4
-GROUP 24   Pig 2 Chicken 4
-GROUP 38   Harpy 3 Pig 2
+WAVE "Glutton" 55
+GROUP  0   Pig 6 Cat 10
+GROUP  9   Bulldog 5 Chicken 12
+GROUP 20   Pig 6 Cat 14
+GROUP 32   Pig 8 Chicken 12
+GROUP 44   Harpy 10 Pig 6 Bulldog 4
 
-WAVE "Outbreak" 55
-GROUP  0   Cat 6 Chicken 5
-GROUP 14   Pig 3 Harpy 2
-GROUP 26   Bulldog 3 Cat 4
-GROUP 40   Pig 2 Chicken 5
-GROUP 50   Bulldog 2 Pig 1
+WAVE "Outbreak" 60
+GROUP  0   Cat 22 Chicken 16
+GROUP 10   Pig 8 Harpy 8
+GROUP 20   Bulldog 8 Cat 14 Chicken 10
+GROUP 32   Pig 8 Chicken 16 Harpy 8
+GROUP 44   Bulldog 6 Pig 6 Cat 12
+GROUP 54   Chicken 14 Harpy 8
 
-WAVE "Convulsion" 60
-GROUP  0   Bulldog 3 Pig 2
-GROUP 14   Cat 6 Chicken 6 Harpy 3
-GROUP 30   Bulldog 2 Pig 3
-GROUP 44   Cat 5 Chicken 5 Harpy 4
-GROUP 56   Bulldog 4
+WAVE "Convulsion" 70
+GROUP  0   Bulldog 8 Pig 6 Cat 14
+GROUP 10   Cat 22 Chicken 22 Harpy 10
+GROUP 24   Bulldog 8 Pig 8 Chicken 14
+GROUP 38   Cat 20 Chicken 20 Harpy 12
+GROUP 52   Bulldog 10 Pig 8 Cat 14
+GROUP 64   Chicken 18 Harpy 10
 
-WAVE "Final Hour" 75
-GROUP  0   Bulldog 3 Pig 3 Harpy 3
-GROUP 14   Cat 8 Chicken 8
-GROUP 28   Bulldog 4 Pig 4
-GROUP 42   Harpy 5 Cat 6 Chicken 6
-GROUP 56   Bulldog 5 Pig 5 Harpy 4
-GROUP 70   Cat 10 Chicken 10
+WAVE "Final Hour" 90
+GROUP  0   Bulldog 8 Pig 8 Harpy 8 Cat 12
+GROUP 10   Cat 30 Chicken 30
+GROUP 22   Bulldog 12 Pig 10 Chicken 14
+GROUP 34   Harpy 16 Cat 22 Chicken 22
+GROUP 48   Bulldog 14 Pig 12 Harpy 10
+GROUP 60   Cat 40 Chicken 40
+GROUP 74   Bulldog 10 Pig 10 Harpy 12
+GROUP 86   Cat 30 Chicken 30

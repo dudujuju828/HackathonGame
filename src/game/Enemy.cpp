@@ -12,10 +12,12 @@ void Enemy::update(float dt, const glm::vec3& playerPos) {
     dir.y = 0.0f;
     const float d = glm::length(dir);
     if (d > 1e-3f) dir /= d;
-    velocity = dir * kEnemyMoveSpeed;
+    const float speed = def ? def->moveSpeed : kEnemyMoveSpeed;
+    velocity = dir * speed;
     velocity.y = 0.0f;
     position.x += velocity.x * dt;
     position.z += velocity.z * dt;
+    if (attackCooldown > 0.0f) attackCooldown -= dt;
 }
 
 }  // namespace game

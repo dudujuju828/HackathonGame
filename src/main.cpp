@@ -17,6 +17,7 @@
 #include "game/Wave.h"
 #include "game/WaveManager.h"
 #include "game/Weapon.h"
+#include "render/Arrows.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
 #include "render/Glow.h"
@@ -155,7 +156,7 @@ std::vector<uint8_t> makeChecker(int size, uint8_t r1, uint8_t g1, uint8_t b1,
 
 int main() {
     try {
-        core::Window window(1600, 900, "HackathonGame");
+        core::Window window(2133, 1200, "HackathonGame");
         core::Input  input;
         core::Time   time;
         input.attach(window.handle());
@@ -220,13 +221,13 @@ int main() {
         // Pig     -> "ArmatureAction"       only clip in GLB
         // Chicken -> no skeleton/clips      procedural bob + forward lean in render matrix
         //
-        // name (for waves.txt lookup),  model, walkAnim, scale, height, radius, bobFreq, bobAmp, basePitchDeg, baseYawDeg, baseRollDeg, maxHp, dropChance
+        // name, model, walkAnim, scale, height, radius, bobFreq, bobAmp, basePitchDeg, baseYawDeg, baseRollDeg, maxHp, dropChance, moveSpeed, damage, attackRange, attackInterval
         const game::EnemyDef enemyDefs[] = {
-            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   3,  0.20f },
-            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   5,  0.50f },
-            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 0.85f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   1,  0.05f },
-            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   4,  0.30f },
-            { "Chicken", &chickenModel, nullptr,                                2.50f, 0.80f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   2,  0.10f },
+            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   8,  0.20f,  3.4f,  12.0f, 1.7f, 0.9f },
+            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,  20,  0.50f,  2.4f,  22.0f, 1.8f, 1.3f },
+            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 1.30f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   2,  0.05f,  4.6f,   6.0f, 1.5f, 0.45f },
+            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.8f,  16.0f, 1.7f, 1.1f },
+            { "Chicken", &chickenModel, nullptr,                                2.50f, 0.80f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  3.8f,   7.0f, 1.6f, 0.55f },
         };
 
         render::Model chestModel;
@@ -316,6 +317,11 @@ int main() {
                             "assets/shaders/particle.frag")) {
             return 1;
         }
+        render::Arrows arrows;
+        if (!arrows.init("assets/shaders/arrow.vert",
+                         "assets/shaders/arrow.frag")) {
+            return 1;
+        }
 
         game::SettingsMenu settingsMenu;
         game::LevelUpMenu  levelUpMenu;
@@ -331,6 +337,20 @@ int main() {
             input.update();
             time.tick();
             float dt = time.dt();
+
+            // Enforce cursor mode every frame against the current scene. The
+            // per-transition toggles below are still useful for resetMouseDelta,
+            // but this guard ensures the cursor never gets stuck hidden if a
+            // transition is missed (alt-tab, scene auto-changes, etc.).
+            {
+                const int desired = (scene == game::Scene::Playing)
+                                       ? GLFW_CURSOR_DISABLED
+                                       : GLFW_CURSOR_NORMAL;
+                if (glfwGetInputMode(window.handle(), GLFW_CURSOR) != desired) {
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, desired);
+                    input.resetMouseDelta();
+                }
+            }
 
             // Escape edge-toggles the settings overlay; it no longer quits.
             const bool curEscape = input.key(GLFW_KEY_ESCAPE);
@@ -507,6 +527,32 @@ int main() {
                         e.animator.calculateBoneTransforms(&e.def->model->skeleton().value());
                     }
                 }
+            }
+
+            // Enemy contact damage. XZ distance check + per-enemy cooldown so
+            // a clustered swarm can't burst the player in one frame.
+            for (auto& e : enemies) {
+                if (!e.alive() || !e.def) continue;
+                if (e.attackCooldown > 0.0f) continue;
+                const glm::vec3 d = e.position - player.position();
+                const float xzDist = std::sqrt(d.x * d.x + d.z * d.z);
+                if (xzDist < e.def->attackRange) {
+                    player.health = std::max(0.0f, player.health - e.def->damage);
+                    player.addTrauma(0.35f);
+                    e.attackCooldown = e.def->attackInterval;
+                }
+            }
+
+            // Player death — full reset: HP, position, items, enemies, chests,
+            // wave 1. Keeps the game playable without a separate game-over UI.
+            if (player.health <= 0.0f) {
+                player.health = player.maxHealth;
+                player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
+                enemies.clear();
+                chests.clear();
+                projectiles.clear();
+                pendingLoot.clear();
+                waveManager.reset();
             }
 
             // Auto-fire ring: cooldown driven by stacked ring count. Every
@@ -764,7 +810,7 @@ int main() {
             worldShader.setMat4 ("uViewProj", cam.proj(window.aspect()) * cam.view());
             worldShader.setVec3 ("uCamPos", cam.position);
             worldShader.setVec3 ("uCamDir", cam.forward());
-            worldShader.setVec3 ("uAmbient", glm::vec3(0.04f));
+            worldShader.setVec3 ("uAmbient", glm::vec3(0.22f));
             {
                 const float outerDeg = settingsMenu.settings().flashlightDeg;
                 const float innerDeg = outerDeg * 0.6f;  // hot core ~60% of outer
@@ -1053,6 +1099,50 @@ int main() {
 
                 hud.drawCrosshair (window.width(), window.height(), hud.crosshair());
 
+                // Soft off-screen enemy indicators. Project each enemy to clip
+                // space; if it's behind the camera or outside [-1,1]^2, drop a
+                // small chevron at the screen edge in that direction.
+                {
+                    const int W = window.width();
+                    const int H = window.height();
+                    const glm::mat4 vp = cam.proj(window.aspect()) * cam.view();
+                    const float insetX = W * 0.06f;          // edge padding
+                    const float insetY = H * 0.06f;
+                    const float arrowSize = 14.0f;            // pixels (half-extent of triangle)
+                    const glm::vec4 arrowColor(1.0f, 0.55f, 0.45f, 0.40f);
+                    for (const auto& e : enemies) {
+                        if (!e.alive() || !e.def) continue;
+                        glm::vec4 clip = vp * glm::vec4(e.hitCentre(), 1.0f);
+                        const bool behind = clip.w <= 1e-3f;
+                        glm::vec2 ndc;
+                        if (behind) {
+                            // Skip the perspective divide entirely. clip.xy
+                            // already encodes the camera-space direction with
+                            // the correct sign — dividing by negative w (or
+                            // negating) would flip it the wrong way.
+                            ndc = glm::vec2(clip.x, clip.y);
+                        } else {
+                            ndc = glm::vec2(clip.x / clip.w, clip.y / clip.w);
+                        }
+                        const bool onScreen = !behind &&
+                            std::abs(ndc.x) <= 1.0f && std::abs(ndc.y) <= 1.0f;
+                        if (onScreen) continue;
+                        // Project direction onto the [-1,1] box edge (Inf-norm).
+                        const float ax = std::abs(ndc.x);
+                        const float ay = std::abs(ndc.y);
+                        const float m  = std::max(std::max(ax, ay), 1e-3f);
+                        glm::vec2 edge = ndc / m;  // now |edge|inf == 1
+                        // Convert to pixel coords (top-left origin), inset from screen edge.
+                        const float halfW = static_cast<float>(W) * 0.5f - insetX;
+                        const float halfH = static_cast<float>(H) * 0.5f - insetY;
+                        const float px = static_cast<float>(W) * 0.5f + edge.x * halfW;
+                        const float py = static_cast<float>(H) * 0.5f - edge.y * halfH;
+                        // Pixel-space angle: y is flipped vs NDC.
+                        const float angle = std::atan2(-edge.y, edge.x);
+                        arrows.draw(W, H, px, py, angle, arrowSize, arrowColor);
+                    }
+                }
+
                 // "LV N" label centred above the XP bar.
                 char lvlBuf[16];
                 std::snprintf(lvlBuf, sizeof(lvlBuf), "LV %d", player.level());
@@ -1155,6 +1245,24 @@ int main() {
                 ps.orbitalCount = player.countItem(game::ItemId::OrbitalRing);
                 ps.items        = player.inventory();
                 statsScreen.draw(hud, text, window.width(), window.height(), ps);
+            }
+
+            // Software cursor — drawn on top of any menu so the player can
+            // see what they're clicking even in fullscreen (where the OS
+            // cursor is unreliable). Only the menus need it; gameplay is
+            // FPS-locked and shouldn't show one.
+            if (scene != game::Scene::Playing) {
+                const float mx   = static_cast<float>(input.mouseX());
+                const float my   = static_cast<float>(input.mouseY());
+                const float half = 6.0f;
+                hud.drawProgress(window.width(), window.height(),
+                                 glm::vec2(mx - half, my - half),
+                                 glm::vec2(half * 2.0f, half * 2.0f),
+                                 1.0f,
+                                 glm::vec3(0.96f, 0.96f, 0.96f),
+                                 glm::vec3(0.96f, 0.96f, 0.96f),
+                                 glm::vec3(0.05f, 0.05f, 0.05f),
+                                 1.5f, 0.95f);
             }
 
             window.swap();
