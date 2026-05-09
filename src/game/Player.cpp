@@ -37,6 +37,7 @@ void Player::restart() {
     stamina     = 20.0f;
     maxStamina  = 20.0f;
     inventory_.clear();
+    feel_            = WalkFeel{};
     level_           = 1;
     xp_              = 0;
     xpToNext_        = 100;

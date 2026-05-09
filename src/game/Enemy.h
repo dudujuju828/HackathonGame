@@ -10,7 +10,7 @@ namespace game {
 constexpr float kEnemyScale      = 0.30f;
 constexpr float kEnemyHeight     = 1.70f;
 constexpr float kEnemyRadius     = 0.60f;
-constexpr float kEnemyMoveSpeed  = 1.8f;
+constexpr float kEnemyMoveSpeed  = 1.3f;
 constexpr int   kEnemyMaxHp      = 2;
 constexpr int   kEnemyXpReward   = 30;
 

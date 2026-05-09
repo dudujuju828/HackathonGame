@@ -23,7 +23,7 @@ struct EnemyDef {
     float baseRollDeg   = 0.0f;   // side-lean around the model's final forward axis (post chase-yaw)
     int   maxHp         = 2;      // hp this enemy spawns with
     float dropChance    = 0.10f;  // 0..1 — probability this enemy drops a chest on death
-    float moveSpeed     = 1.8f;   // m/s chase speed
+    float moveSpeed     = 1.3f;   // m/s chase speed
     float damage        = 5.0f;   // hp dealt to player per hit
     float attackRange   = 1.6f;   // metres — must be within this to land a hit
     float attackInterval = 1.0f;  // seconds between this enemy's hits

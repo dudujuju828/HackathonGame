@@ -224,11 +224,11 @@ int main() {
         //
         // name, model, walkAnim, scale, height, radius, bobFreq, bobAmp, basePitchDeg, baseYawDeg, baseRollDeg, maxHp, dropChance, moveSpeed, damage, attackRange, attackInterval
         const game::EnemyDef enemyDefs[] = {
-            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   8,  0.20f,  3.4f,  12.0f, 1.7f, 0.9f },
-            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,  20,  0.50f,  2.4f,  22.0f, 1.8f, 1.3f },
-            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 1.30f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   2,  0.05f,  4.6f,   6.0f, 1.5f, 0.45f },
-            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.8f,  16.0f, 1.7f, 1.1f },
-            { "Chicken", &chickenModel, nullptr,                                2.50f, 0.80f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  3.8f,   7.0f, 1.6f, 0.55f },
+            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   8,  0.20f,  2.4f,  12.0f, 1.7f, 0.9f },
+            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,  20,  0.50f,  1.7f,  22.0f, 1.8f, 1.3f },
+            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 1.30f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   2,  0.05f,  3.2f,   6.0f, 1.5f, 0.45f },
+            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.0f,  16.0f, 1.7f, 1.1f },
+            { "Chicken", &chickenModel, nullptr,                                4.00f, 0.20f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  2.7f,   7.0f, 1.6f, 0.55f },
         };
 
         render::Model chestModel;
@@ -849,6 +849,9 @@ int main() {
                 if (justPressed) {
                     player.restart();
                     player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
+                    weapon.projectileCount = 1;
+                    weapon.fanColumns      = 1;
+                    projectileSpeed        = 25.0f;
                     enemies.clear();
                     chests.clear();
                     antidoteBoxes.clear();
