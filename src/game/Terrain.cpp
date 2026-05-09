@@ -245,21 +245,28 @@ void Terrain::buildMesh() {
 }
 
 void Terrain::buildTexture() {
+    // Load the gravel diffuse from disk; fall back to a tiny procedural
+    // earthy fill if the file is missing so the build never breaks.
+    texture_ = std::make_shared<render::Texture>();
+    if (texture_->loadFromFile("assets/textures/gravel_stones_diff_1k.jpg",
+                               /*nearest=*/false)) {
+        return;
+    }
+    std::fprintf(stderr, "[terrain] gravel texture missing — using procedural fallback\n");
+
     const int size = 64;
     std::vector<uint8_t> pixels(static_cast<size_t>(size) * size * 4);
     for (int y = 0; y < size; ++y) {
         for (int x = 0; x < size; ++x) {
-            // Earthy ground color with per-pixel hash variation.
             int hash = (x * 1619 + y * 31337) & 0xFF;
             auto px = [&](size_t idx) -> uint8_t& { return pixels[idx]; };
             size_t i = (static_cast<size_t>(y) * size + x) * 4;
-            px(i+0) = static_cast<uint8_t>(42 + (hash & 0x0F));        // R
-            px(i+1) = static_cast<uint8_t>(60 + ((hash >> 2) & 0x0F)); // G
-            px(i+2) = static_cast<uint8_t>(28 + (hash & 0x07));        // B
+            px(i+0) = static_cast<uint8_t>(42 + (hash & 0x0F));
+            px(i+1) = static_cast<uint8_t>(60 + ((hash >> 2) & 0x0F));
+            px(i+2) = static_cast<uint8_t>(28 + (hash & 0x07));
             px(i+3) = 255;
         }
     }
-    texture_ = std::make_shared<render::Texture>();
     texture_->createRGBA(size, size, pixels.data(), /*nearest=*/true);
 }
 

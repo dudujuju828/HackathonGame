@@ -47,6 +47,11 @@ public:
     void setSpawn(const glm::vec3& feetPosition);
     void update(float dt, const core::Input& input, float timeSeconds, float groundHeight = 0.0f);
 
+    // Clamp the player's XZ position to the given world rectangle (used to
+    // keep the player inside the perimeter walls). The camera's horizontal
+    // position is updated to match so the view doesn't lag by a frame.
+    void clampXZ(float minX, float maxX, float minZ, float maxZ);
+
     // Add to the trauma accumulator (clamped 0..1). Squared in-shader for
     // a perceptual decay curve.
     void addTrauma(float amount);
