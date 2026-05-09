@@ -12,6 +12,7 @@ uniform vec3 uAmbient;
 uniform float uFlashInner; // cos(inner angle)
 uniform float uFlashOuter; // cos(outer angle)
 uniform vec3 uFlashColor;
+uniform float uAlpha;       // multiplied into the final fragment alpha (1.0 = opaque)
 
 out vec4 FragColor;
 
@@ -32,5 +33,5 @@ void main() {
     vec3 lit = albedo * uAmbient
              + albedo * uFlashColor * cone * atten * ndotl;
 
-    FragColor = vec4(lit, 1.0);
+    FragColor = vec4(lit, uAlpha);
 }

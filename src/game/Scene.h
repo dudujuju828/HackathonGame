@@ -7,6 +7,7 @@ enum class Scene {
     Settings,
     LevelUp,
     Inventory,
+    Loot,       // chest opened, popup awaiting click-to-continue
 };
 
 }  // namespace game
