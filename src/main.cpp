@@ -212,13 +212,13 @@ int main() {
         // Pig     -> "ArmatureAction"       only clip in GLB
         // Chicken -> no skeleton/clips      procedural bob + forward lean in render matrix
         //
-        //              model          walkAnim             scale   height  radius  bobFreq  bobAmp
+        //              model          walkAnim             scale   height  radius  bobFreq  bobAmp  basePitchDeg  baseYawDeg  baseRollDeg  maxHp
         const game::EnemyDef enemyDefs[] = {
-            { &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 0.60f, 0.0f,  0.0f  },
-            { &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 0.60f, 0.0f,  0.0f  },
-            { &catModel,     nullptr,                                0.45f, 0.25f, 0.40f, 8.0f,  0.04f },
-            { &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 0.50f, 0.0f,  0.0f  },
-            { &chickenModel, nullptr,                                2.50f, 0.80f, 0.50f, 16.0f, 0.06f },
+            { &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 0.60f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   3 },
+            { &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 0.60f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   5 },
+            { &catModel,     nullptr,                                0.45f, 0.25f, 0.40f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   1 },
+            { &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 0.50f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   4 },
+            { &chickenModel, nullptr,                                2.50f, 0.80f, 0.50f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   2 },
         };
 
         game::Weapon weapon;
@@ -549,6 +549,25 @@ int main() {
                         glm::vec3 fwd = glm::normalize(e.velocity);
                         float angle = std::atan2(fwd.x, fwd.z);
                         M = glm::rotate(M, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+                    }
+                    // baseRoll is applied right after the chase yaw so it acts
+                    // as a true side-lean around the model's final forward axis,
+                    // regardless of which way the enemy is facing.
+                    if (activeDef->baseRollDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(activeDef->baseRollDeg),
+                                        glm::vec3(0.0f, 0.0f, 1.0f));
+                    }
+                    // Per-model fix-up rotations. baseYaw is applied first so it
+                    // turns the model after basePitch puts it upright; together
+                    // they reorient an arbitrary GLB into the engine's
+                    // "Y up, +Z forward" convention.
+                    if (activeDef->baseYawDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(activeDef->baseYawDeg),
+                                        glm::vec3(0.0f, 1.0f, 0.0f));
+                    }
+                    if (activeDef->basePitchDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(activeDef->basePitchDeg),
+                                        glm::vec3(1.0f, 0.0f, 0.0f));
                     }
                     // Chicken has no skeleton: simulate running posture with a forward lean
                     // and a slight side-to-side roll that syncs with the vertical bob.

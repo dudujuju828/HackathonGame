@@ -20,6 +20,7 @@ void EnemySpawner::spawnAt(std::vector<Enemy>& enemies, const glm::vec3& at) {
     if (defs_ && defCount_ > 0) {
         int idx = static_cast<int>(rand01_() * static_cast<float>(defCount_)) % defCount_;
         e.def = &defs_[idx];
+        e.hp  = e.def->maxHp;
         e.animator.setAnimation(e.def->walkAnim);
     }
     enemies.push_back(e);
