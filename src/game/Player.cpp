@@ -16,6 +16,13 @@ Player::Player() {
     setSpawn({ 0.0f, 0.0f, 3.0f });
 }
 
+void Player::clampXZ(float minX, float maxX, float minZ, float maxZ) {
+    position_.x = std::clamp(position_.x, minX, maxX);
+    position_.z = std::clamp(position_.z, minZ, maxZ);
+    camera_.position.x = position_.x;
+    camera_.position.z = position_.z;
+}
+
 void Player::setSpawn(const glm::vec3& feet) {
     position_        = feet;
     velocity_        = glm::vec3(0.0f);

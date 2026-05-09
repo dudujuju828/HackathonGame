@@ -24,10 +24,16 @@ public:
     void setDefs(const EnemyDef* defs, int count);
 
     int  defCount() const { return defCount_; }
+    const EnemyDef* defs() const { return defs_; }
 
     // Returns the index in the def table for `name` (case-insensitive),
     // or -1 if no def matches.
     int  findDefIndex(const std::string& name) const;
+
+    // Multiplier applied to each enemy's spawn HP. Set by main from a
+    // scaling function so newly-spawned enemies match player power.
+    void  setHpMultiplier(float m);
+    float hpMultiplier() const { return hpMultiplier_; }
 
     // Legacy random-pick spawner used when no WaveManager is driving things.
     void update(float dt, std::vector<Enemy>& enemies,
@@ -45,8 +51,9 @@ private:
     float    timer_     = 1.5f;
     uint32_t rngState_  = 0xDEADBEEFu;
 
-    const EnemyDef* defs_     = nullptr;
-    int             defCount_ = 0;
+    const EnemyDef* defs_         = nullptr;
+    int             defCount_     = 0;
+    float           hpMultiplier_ = 1.0f;
 
     float rand01_();
 };

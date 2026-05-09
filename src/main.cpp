@@ -26,10 +26,12 @@
 #include "render/Glow.h"
 #include "render/Hud.h"
 #include "render/Mesh.h"
+#include "render/Minimap.h"
 #include "render/Model.h"
 #include "render/Particles.h"
 #include "render/PostFx.h"
 #include "render/Shader.h"
+#include "render/Skybox.h"
 #include "render/Text.h"
 #include "render/Texture.h"
 
@@ -182,6 +184,12 @@ int main() {
         auto px = makeChecker(64, 220, 220, 220, 60, 60, 60);
         checker.createRGBA(64, 64, px.data(), /*nearest=*/true);
 
+        render::Texture wallTex;
+        if (!wallTex.loadFromFile("assets/textures/plastered_stone_wall_diff_1k.jpg",
+                                   /*nearest=*/false)) {
+            std::fprintf(stderr, "[main] wall texture missing — walls will use the checker fallback\n");
+        }
+
         game::Terrain terrain;
         terrain.generate();
 
@@ -242,6 +250,74 @@ int main() {
         if (!antidoteBoxModel.loadFromFile("assets/models/Antidote_box.glb")) {
             std::fprintf(stderr, "[main] failed to load antidote box model\n");
         }
+
+        render::Model treeModel, tombstoneModel;
+        if (!treeModel.loadFromFile("assets/models/spooky_tree_1.glb")) {
+            std::fprintf(stderr, "[main] failed to load tree model\n");
+        }
+        if (!tombstoneModel.loadFromFile("assets/models/stylized_tombstones.glb")) {
+            std::fprintf(stderr, "[main] failed to load tombstone model\n");
+        }
+
+        // Map decorations: deterministic procedural scatter so the layout
+        // is the same every run. Trees cover the whole map; tombstones
+        // are biased into the SE quadrant (Graveyard biome).
+        struct Decoration {
+            glm::vec3      position;
+            float          yawRad;
+            float          scale;
+            render::Model* model;
+        };
+        std::vector<Decoration> decorations;
+        {
+            std::mt19937 rng(0xCAFEC0DEu);  // fixed seed = stable layout
+            std::uniform_real_distribution<float> u01(0.0f, 1.0f);
+            const float half = game::Terrain::kWorldSize * 0.5f;
+
+            auto safeFromSpawn = [](float x, float z) {
+                // Keep a 6m clear bubble around the player spawn (0, 3).
+                const float dx = x - 0.0f;
+                const float dz = z - 3.0f;
+                return (dx * dx + dz * dz) > 36.0f;
+            };
+
+            // ~40 trees scattered everywhere within the playable area.
+            for (int i = 0; i < 40; ++i) {
+                const float x = (u01(rng) * 2.0f - 1.0f) * (half - 6.0f);
+                const float z = (u01(rng) * 2.0f - 1.0f) * (half - 6.0f);
+                if (!safeFromSpawn(x, z)) { --i; continue; }
+                Decoration d;
+                const float treeScale = (0.9f + u01(rng) * 0.7f) / 12.5f;
+                d.position = glm::vec3(x, terrain.heightAt(x, z) + 2.8f, z);
+                d.yawRad   = u01(rng) * 6.28318530718f;
+                d.scale    = treeScale;
+                d.model    = &treeModel;
+                decorations.push_back(d);
+            }
+
+            // ~25 tombstones, biased into the SE Graveyard quadrant
+            // (x in [0, half-6], z in [-(half-6), 0]).
+            for (int i = 0; i < 25; ++i) {
+                const float x = u01(rng) * (half - 6.0f);
+                const float z = -u01(rng) * (half - 6.0f);
+                if (!safeFromSpawn(x, z)) { --i; continue; }
+                Decoration d;
+                d.position = glm::vec3(x, terrain.heightAt(x, z), z);
+                d.yawRad   = u01(rng) * 6.28318530718f;
+                d.scale    = (0.6f + u01(rng) * 0.5f) / 25.0f;
+                d.model    = &tombstoneModel;
+                decorations.push_back(d);
+            }
+        }
+
+        // Perimeter walls: 4 long thin boxes around the map edge using the
+        // existing unit cube mesh. Player position is clamped to keep them
+        // inside the wall-bounded area (clamp inset is half the wall width).
+        constexpr float kWallHalfThickness = 0.5f;     // metres (half-width)
+        constexpr float kWallHalfHeight    = 8.0f;     // metres (above y=0)
+        constexpr float kWallY             = 1.5f;     // wall centre Y (lowered)
+        const float kWallHalfMap = game::Terrain::kWorldSize * 0.5f;
+        const float kPlayerInset = 0.6f;               // a little less than wall thickness
         const render::AnimationClip* chestOpenAnim = nullptr;
         if (!chestModel.animations().empty()) {
             chestOpenAnim = &chestModel.animations()[0];
@@ -267,6 +343,65 @@ int main() {
         spawner.spawnMinRadius = 14.0f;  // never closer than this to the player
         spawner.spawnRadius    = 22.0f;  // upper bound of the random spawn distance
         spawner.setDefs(enemyDefs, static_cast<int>(std::size(enemyDefs)));
+
+        // Difficulty scaling: per-wave HP multiplier on spawned enemies so
+        // sumOfWaveHP >= kHpScaleRatio * (player DPS * wave duration).
+        // Player DPS is approximated from current inventory composition.
+        constexpr float kHpScaleRatio    = 1.2f;   // total wave HP target vs player damage budget
+        constexpr float kHpScaleMaxMult  = 10.0f;  // cap so a tiny wave + heavy build doesn't make absurd 200-HP cats
+
+        auto playerExpectedDps = [](const game::Player& p) -> float {
+            float dps = 1.0f;  // baseline manual fire — ~1 dmg/sec assumed
+
+            // Auto Ring: each stack = 1 shot/sec, 1 dmg per hit.
+            dps += static_cast<float>(p.countItem(game::ItemId::AutoSyringeRing));
+
+            // Orbit Ring: contact damage on a 0.4s per-syringe cooldown; assume
+            // ~40% effective uptime against the swarm = ~1 dmg/sec/ring.
+            dps += static_cast<float>(p.countItem(game::ItemId::OrbitalRing)) * 1.0f;
+
+            // Hail Ring: 35 + 18(N-1) syringes per 5s, ~25% land near an enemy.
+            const int hail = p.countItem(game::ItemId::HailRing);
+            if (hail > 0) {
+                const int sy = 35 + 18 * (hail - 1);
+                dps += static_cast<float>(sy) * 0.25f / 5.0f;
+            }
+
+            // Explosive Auto: 2.5/2^(N-1) sec interval, ~5.5 dmg per shot
+            // (1 direct + 3 AoE * ~1.5 enemies hit on average).
+            const int explo = p.countItem(game::ItemId::ExplosiveAuto);
+            if (explo > 0) {
+                const float interval = 2.5f / std::pow(2.0f, static_cast<float>(explo - 1));
+                dps += 5.5f / interval;
+            }
+
+            // Lightning Ring: same interval, 1 direct + 3 chain = 4 dmg per shot.
+            const int light = p.countItem(game::ItemId::LightningRing);
+            if (light > 0) {
+                const float interval = 2.5f / std::pow(2.0f, static_cast<float>(light - 1));
+                dps += 4.0f / interval;
+            }
+            return dps;
+        };
+
+        auto computeHpMultiplier = [&](const game::Player& p,
+                                       const game::WaveDef* wave) -> float {
+            if (!wave || wave->duration <= 0.0f) return 1.0f;
+            const float dps   = playerExpectedDps(p);
+            const float total = dps * wave->duration;            // damage budget
+            float baseHp = 0.0f;
+            for (const auto& g : wave->groups) {
+                for (const auto& entry : g.entries) {
+                    const int idx = spawner.findDefIndex(entry.name);
+                    if (idx >= 0) baseHp += static_cast<float>(entry.count) *
+                                            static_cast<float>(enemyDefs[idx].maxHp);
+                }
+            }
+            if (baseHp < 1.0f) return 1.0f;
+            const float target = total * kHpScaleRatio;
+            const float mult   = target / baseHp;
+            return std::clamp(mult, 1.0f, kHpScaleMaxMult);
+        };
 
         game::WaveManager waveManager;
         {
@@ -374,6 +509,17 @@ int main() {
                          "assets/shaders/arrow.frag")) {
             return 1;
         }
+        render::Minimap minimap;
+        if (!minimap.init("assets/shaders/minimap_disc.vert",
+                          "assets/shaders/minimap_disc.frag")) {
+            return 1;
+        }
+        render::Skybox skybox;
+        if (!skybox.init("assets/shaders/sky.vert",
+                         "assets/shaders/sky.frag",
+                         "assets/textures/satara_night_1k.hdr")) {
+            std::fprintf(stderr, "[main] skybox failed to load — continuing without one\n");
+        }
 
         game::StartMenu     startMenu;
         startMenu.load("data/player_brief.txt");
@@ -386,6 +532,16 @@ int main() {
         bool prevEscape   = false;
         bool prevB        = false;
         bool prevJ        = false;
+
+        // Minimap state. M toggles between compact (top-right) and an
+        // enlarged centred view. World radius covers a fixed area regardless
+        // of size, so the enlarged map = same area at higher zoom.
+        bool prevM            = false;
+        bool minimapExpanded  = false;
+        constexpr float kMinimapRadiusPx        = 110.0f;  // compact pixel radius
+        constexpr float kMinimapExpandedPx      = 320.0f;  // M-toggle pixel radius
+        constexpr float kMinimapWorldRadius     = 35.0f;   // metres covered by the disc
+        constexpr float kMinimapMargin          = 24.0f;   // distance from screen corner
 
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
@@ -455,6 +611,15 @@ int main() {
             }
             prevJ = curJ;
 
+            // M edge-toggles the enlarged minimap. Compact (top-right) is
+            // always shown; M just swaps to a centred zoomed-out version
+            // without pausing the game.
+            const bool curM = input.key(GLFW_KEY_M);
+            if (curM && !prevM) {
+                minimapExpanded = !minimapExpanded;
+            }
+            prevM = curM;
+
             // Apply settings to the player camera every frame. The slider value
             // is horizontal FOV; convert to vertical FOV for glm::perspective.
             {
@@ -482,6 +647,9 @@ int main() {
                 } else {
                     float gh = terrain.heightAt(player.position().x, player.position().z);
                     player.update(dt, input, time.total(), gh);
+                    // Keep the player inside the perimeter walls.
+                    const float bound = kWallHalfMap - kPlayerInset;
+                    player.clampXZ(-bound, bound, -bound, bound);
                     weapon.fireRate = 1.0f / player.attackSpeed;
                     weapon.update(dt, input, player);
                 }
@@ -603,16 +771,34 @@ int main() {
             // WaveManager owns scheduling now; falls back to the legacy spawner
             // tick only if no waves were loaded.
             if (waveManager.totalWaves() > 0) {
+                // Refresh the difficulty multiplier each frame so groups that
+                // spawn later in a wave reflect any items the player just
+                // grabbed mid-fight.
+                spawner.setHpMultiplier(
+                    computeHpMultiplier(player, waveManager.currentWave()));
                 waveManager.update(dt, enemies, player.position());
 
                 // Spawn one antidote box at the start of each new wave.
+                // Try a few angles and clamp into the wall-bounded area so
+                // the box is always reachable.
                 const int curWave = waveManager.currentWaveIndex();
                 if (!waveManager.finished() && curWave != antidoteSpawnedForWave) {
                     antidoteSpawnedForWave = curWave;
                     antidoteBoxes.clear();
-                    const float angle = game::rand01() * 6.28318530718f;
-                    const float spx = player.position().x + std::cos(angle) * game::kAntidoteSpawnDist;
-                    const float spz = player.position().z + std::sin(angle) * game::kAntidoteSpawnDist;
+                    // Inset accounts for the box's draw scale so the visual
+                    // never sticks through the wall geometry.
+                    const float boxBound = kWallHalfMap - kPlayerInset - 5.0f;
+                    float spx = 0.0f, spz = 0.0f;
+                    for (int attempt = 0; attempt < 6; ++attempt) {
+                        const float angle = game::rand01() * 6.28318530718f;
+                        spx = player.position().x + std::cos(angle) * game::kAntidoteSpawnDist;
+                        spz = player.position().z + std::sin(angle) * game::kAntidoteSpawnDist;
+                        if (std::abs(spx) <= boxBound && std::abs(spz) <= boxBound) break;
+                    }
+                    // Final clamp: even if every angle landed outside (player
+                    // standing in a corner), force the box back inside the walls.
+                    spx = std::clamp(spx, -boxBound, boxBound);
+                    spz = std::clamp(spz, -boxBound, boxBound);
                     game::AntidoteBox box;
                     box.position = glm::vec3(spx, terrain.heightAt(spx, spz), spz);
                     box.yawRad   = game::rand01() * 6.28318530718f;
@@ -649,6 +835,53 @@ int main() {
                 std::remove_if(antidoteBoxes.begin(), antidoteBoxes.end(),
                     [](const game::AntidoteBox& b){ return b.state == game::AntidoteBoxState::Collected; }),
                 antidoteBoxes.end());
+
+            // Beacon to the sky — a dense vertical pillar of bright green
+            // particles rising 40m above each active box. Each frame we
+            // emit a column of short-lived sparks evenly spaced along the
+            // height; constant respawn rate makes it read as a beam.
+            {
+                constexpr float kBeamHeight     = 40.0f;
+                constexpr int   kBeamPartsPerBox = 90;     // particles emitted per box per frame
+                constexpr float kBeamRadius     = 0.09f;   // horizontal jitter (metres)
+                for (const auto& box : antidoteBoxes) {
+                    if (box.state != game::AntidoteBoxState::Active) continue;
+                    const float gh = terrain.heightAt(box.position.x, box.position.z);
+                    const float baseY = gh + game::kAntidoteYOffset + 0.2f;
+                    for (int i = 0; i < kBeamPartsPerBox; ++i) {
+                        const float t01   = game::rand01();          // height fraction
+                        const float az    = game::rand01() * 6.28318530718f;
+                        const float r     = std::sqrt(game::rand01()) * kBeamRadius;
+                        render::Particle pp;
+                        pp.position = glm::vec3(box.position.x + std::cos(az) * r,
+                                                baseY + t01 * kBeamHeight,
+                                                box.position.z + std::sin(az) * r);
+                        // Slow upward drift; keeps the column alive briefly.
+                        pp.velocity = glm::vec3(0.0f,
+                                                0.5f + game::rand01() * 0.4f,
+                                                0.0f);
+                        const float ct = game::rand01();
+                        // Hot core toward white, cooler edges toward green.
+                        pp.color = glm::vec4(0.55f + ct * 0.45f,
+                                             1.0f,
+                                             0.55f + ct * 0.30f,
+                                             1.0f);
+                        pp.life  = 0.18f + game::rand01() * 0.10f;   // short — beam stays "still"
+                        pp.age   = 0.0f;
+                        // pp.size feeds gl_PointSize via aSize*viewportH/clip.w
+                        // in particle.vert. The GPU clamps gl_PointSize at
+                        // GL_POINT_SIZE_MAX (often ~64-256 px), so any
+                        // "size" big enough to land above the clamp at 30 m
+                        // distance produces an identical-looking blob no
+                        // matter how much you shrink it. Keep aSize sub-1
+                        // so the formula stays under the clamp and actually
+                        // honours our radius.
+                        pp.size  = 0.55f - t01 * 0.20f + game::rand01() * 0.10f;
+                        particles.emit(pp);
+                    }
+
+                }
+            }
             // Pathfinding is XZ only (handled in Enemy::update). Y is forced
             // to the terrain height under each enemy every frame so the model
             // tracks the surface and never clips into hills.
@@ -851,7 +1084,7 @@ int main() {
                                                     gh + kHailHeight,
                                                     player.position().z + std::sin(angle) * r);
                             pj.velocity = glm::vec3(0.0f, -kHailFallSpeed, 0.0f);
-                            pj.scale    = projectileScale * 4.0f;  // chunky so the storm reads at distance
+                            pj.scale    = projectileScale * 2.2f;  // chunky so the storm reads at distance (4.0 / 1.8)
                             // Long lifetime: enough for the fall + the stick.
                             // Will be re-clamped by the terrain-snap pass below
                             // once the syringe lands.
@@ -1230,6 +1463,14 @@ int main() {
             sceneFbo.bind();
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+            // Skybox first — depth-disabled fullscreen pass; subsequent
+            // world geometry overdraws wherever it passes depth testing.
+            {
+                const glm::mat4 viewProj = cam.proj(window.aspect()) * cam.view();
+                const glm::mat4 invVP    = glm::inverse(viewProj);
+                skybox.draw(invVP, cam.position, /*exposure=*/1.6f);
+            }
+
             worldShader.use();
             checker.bind(0);
             worldShader.setInt  ("uAlbedo", 0);
@@ -1255,6 +1496,53 @@ int main() {
             worldShader.setMat4("uModel", glm::mat4(1.0f));
             terrain.mesh().draw();
             checker.bind(0); // restore for subsequent geometry
+
+            // Map decorations: trees + tombstones, scattered at startup.
+            if (!decorations.empty()) {
+                GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
+                glDisable(GL_CULL_FACE);  // some GLB winding is inverse
+                worldShader.setInt("uHasBones", 0);
+                worldShader.setVec3("uTint", glm::vec3(1.0f));
+                for (const auto& d : decorations) {
+                    glm::mat4 M(1.0f);
+                    M = glm::translate(M, d.position);
+                    M = glm::rotate(M, d.yawRad, glm::vec3(0.0f, 1.0f, 0.0f));
+                    M = glm::scale(M, glm::vec3(d.scale));
+                    worldShader.setMat4("uModel", M);
+                    for (const auto& sub : d.model->meshes()) {
+                        if (sub.diffuse) sub.diffuse->bind(0);
+                        sub.mesh.draw();
+                    }
+                }
+                if (cullWas) glEnable(GL_CULL_FACE);
+                checker.bind(0);
+            }
+
+            // Perimeter walls: 4 long thin boxes around the map edge using
+            // the unit cube mesh, textured with the plastered stone diffuse.
+            {
+                worldShader.setInt("uHasBones", 0);
+                worldShader.setVec3("uTint", glm::vec3(1.0f));  // let the texture speak
+                wallTex.bind(0);
+                const float L = kWallHalfMap * 2.0f;        // wall length (matches map)
+                const float T = kWallHalfThickness * 2.0f;  // wall thickness
+                const float H = kWallHalfHeight * 2.0f;     // wall full height
+                struct WallTransform { glm::vec3 centre; glm::vec3 size; };
+                const WallTransform walls[4] = {
+                    { glm::vec3(0.0f, kWallY,  kWallHalfMap), glm::vec3(L, H, T) },
+                    { glm::vec3(0.0f, kWallY, -kWallHalfMap), glm::vec3(L, H, T) },
+                    { glm::vec3( kWallHalfMap, kWallY, 0.0f), glm::vec3(T, H, L) },
+                    { glm::vec3(-kWallHalfMap, kWallY, 0.0f), glm::vec3(T, H, L) },
+                };
+                for (const auto& w : walls) {
+                    glm::mat4 M(1.0f);
+                    M = glm::translate(M, w.centre);
+                    M = glm::scale(M, w.size);
+                    worldShader.setMat4("uModel", M);
+                    cube.draw();
+                }
+                checker.bind(0);  // restore default for following passes
+            }
 
             // Enemies: track the active def to avoid redundant shader state changes
             // when consecutive enemies share a type.
@@ -1395,11 +1683,17 @@ int main() {
                 worldShader.use();
             }
 
-            // Antidote boxes — hovering, slowly rotating, green-glowing.
+            // Antidote boxes — natural texture with a subtle green pulse so
+            // the box itself reads as faintly self-luminous (the vertical
+            // beam handles long-distance visibility).
             if (!antidoteBoxes.empty()) {
+                const float boxPulse = 1.05f + 0.10f * std::sin(time.total() * 2.5f);
+                const glm::vec3 boxTint(0.95f * boxPulse,
+                                        1.20f * boxPulse,
+                                        1.00f * boxPulse);
                 worldShader.setInt  ("uHasBones", 0);
                 worldShader.setFloat("uAlpha",    1.0f);
-                worldShader.setVec3 ("uTint",     glm::vec3(0.3f, 0.85f, 0.4f));
+                worldShader.setVec3 ("uTint",     boxTint);
                 checker.bind(0);
                 for (const auto& box : antidoteBoxes) {
                     if (box.state != game::AntidoteBoxState::Active) continue;
@@ -1419,20 +1713,8 @@ int main() {
                 }
                 worldShader.setVec3("uTint", glm::vec3(1.0f));
 
-                // Green glow disc beneath each active box.
-                {
-                    const glm::mat4 vp2 = cam.proj(window.aspect()) * cam.view();
-                    for (const auto& box : antidoteBoxes) {
-                        if (box.state != game::AntidoteBoxState::Active) continue;
-                        const float gh = terrain.heightAt(box.position.x, box.position.z);
-                        glow.draw(vp2,
-                                  glm::vec3(box.position.x, gh + 0.02f, box.position.z),
-                                  /*radius=*/2.2f,
-                                  glm::vec3(0.3f, 1.0f, 0.45f),
-                                  /*intensity=*/1.3f);
-                    }
-                    worldShader.use();
-                }
+                // (No ground glow disc — the beacon's vertical particle
+                // beam carries the visibility on its own.)
             }
 
             // Particles render after chests so they sit on top of the glow disc.
@@ -1580,6 +1862,89 @@ int main() {
 
                 hud.drawCrosshair (window.width(), window.height(), hud.crosshair());
 
+                // Minimap. Circular disc top-right by default; M toggles to a
+                // larger centred view. Player marker is always at centre and
+                // the world is rotated to put player-forward at the top.
+                {
+                    const int W = window.width();
+                    const int H = window.height();
+                    const float radius = minimapExpanded ? kMinimapExpandedPx
+                                                          : kMinimapRadiusPx;
+                    const float cx = minimapExpanded
+                        ? W * 0.5f
+                        : W - kMinimapMargin - radius;
+                    const float cy = minimapExpanded
+                        ? H * 0.5f
+                        : kMinimapMargin + radius;
+
+                    // Background disc + border ring.
+                    minimap.drawDisc(W, H, cx, cy, radius,
+                                     glm::vec4(0.04f, 0.05f, 0.06f, 0.78f),
+                                     glm::vec4(0.85f, 0.85f, 0.90f, 0.85f),
+                                     0.04f);
+
+                    // Build the player-relative basis (forward + right) in
+                    // the XZ plane so we can rotate world positions into
+                    // map space (player-forward = up on the disc).
+                    const float yawRad = glm::radians(player.camera().yaw);
+                    const float fx = std::cos(yawRad);
+                    const float fz = std::sin(yawRad);
+                    const float rx = -fz;   // right in XZ = perpendicular to forward
+                    const float rz =  fx;
+                    const glm::vec3 ppos = player.position();
+                    const float pixPerMetre = radius / kMinimapWorldRadius;
+
+                    auto plotMarker = [&](const glm::vec3& worldPos,
+                                          float halfSize,
+                                          const glm::vec3& color,
+                                          float opacity) {
+                        const float dx = worldPos.x - ppos.x;
+                        const float dz = worldPos.z - ppos.z;
+                        const float distXZ = std::sqrt(dx * dx + dz * dz);
+                        // Skip when the marker centre would be off-disc; small
+                        // safety inset so the dot stays fully inside.
+                        if (distXZ > kMinimapWorldRadius * 0.96f) return;
+                        const float mapRight   =  dx * rx + dz * rz;
+                        const float mapForward =  dx * fx + dz * fz;
+                        const float px = cx + mapRight   * pixPerMetre;
+                        const float py = cy - mapForward * pixPerMetre;  // forward = up = -y
+                        hud.drawRect(W, H,
+                                     glm::vec2(px - halfSize, py - halfSize),
+                                     glm::vec2(halfSize * 2.0f, halfSize * 2.0f),
+                                     color, opacity);
+                    };
+
+                    // Enemies — bright red dots, slightly bigger when expanded.
+                    const float enemyDot = minimapExpanded ? 5.0f : 3.5f;
+                    for (const auto& e : enemies) {
+                        if (!e.alive()) continue;
+                        plotMarker(e.position, enemyDot,
+                                   glm::vec3(1.0f, 0.18f, 0.18f), 0.95f);
+                    }
+
+                    // Antidote boxes — bright green dot, larger so it stands out.
+                    const float antidoteDot = minimapExpanded ? 8.0f : 5.5f;
+                    for (const auto& b : antidoteBoxes) {
+                        if (b.state != game::AntidoteBoxState::Active) continue;
+                        plotMarker(b.position, antidoteDot,
+                                   glm::vec3(0.30f, 1.0f, 0.45f), 0.95f);
+                    }
+
+                    // Player — white dot at the disc centre, with a thin
+                    // forward indicator pointing up.
+                    const float playerDot = minimapExpanded ? 7.0f : 5.0f;
+                    hud.drawRect(W, H,
+                                 glm::vec2(cx - playerDot, cy - playerDot),
+                                 glm::vec2(playerDot * 2.0f, playerDot * 2.0f),
+                                 glm::vec3(1.0f, 1.0f, 1.0f), 1.0f);
+                    // Tiny vertical bar above the dot showing facing direction.
+                    const float fwBarH = playerDot * 2.4f;
+                    hud.drawRect(W, H,
+                                 glm::vec2(cx - 1.0f, cy - playerDot - fwBarH),
+                                 glm::vec2(2.0f, fwBarH),
+                                 glm::vec3(1.0f, 1.0f, 1.0f), 0.85f);
+                }
+
                 // Soft off-screen enemy indicators. Project each enemy to clip
                 // space; if it's behind the camera or outside [-1,1]^2, drop a
                 // small chevron at the screen edge in that direction.
@@ -1673,11 +2038,13 @@ int main() {
                     if (waveManager.finished()) {
                         std::snprintf(waveBuf, sizeof(waveBuf), "ALL WAVES CLEAR");
                     } else {
-                        std::snprintf(waveBuf, sizeof(waveBuf), "WAVE %d / %d  %s  %.0fs",
+                        std::snprintf(waveBuf, sizeof(waveBuf),
+                                      "WAVE %d / %d  %s  %.0fs  HPx%.1f",
                                       waveManager.currentWaveIndex() + 1,
                                       waveManager.totalWaves(),
                                       waveManager.currentWaveName().c_str(),
-                                      waveManager.waveTimeRemaining());
+                                      waveManager.waveTimeRemaining(),
+                                      spawner.hpMultiplier());
                     }
                     const std::string ws = waveBuf;
                     const float wScale = 1.6f;
