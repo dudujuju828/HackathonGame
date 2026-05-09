@@ -27,6 +27,13 @@ public:
     const std::string& currentWaveName() const;
     float waveTimeRemaining() const;
     float waveElapsed() const { return waveElapsed_; }
+    // Pointer to the current wave's data (groups + duration), or nullptr
+    // if the run is finished or the wave list is empty.
+    const WaveDef* currentWave() const {
+        if (finishedAll_) return nullptr;
+        if (currentWave_ < 0 || currentWave_ >= static_cast<int>(waves_.size())) return nullptr;
+        return &waves_[currentWave_];
+    }
 
     // Reset back to wave 0; called when the player swaps maps or restarts.
     void reset();

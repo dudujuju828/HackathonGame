@@ -344,6 +344,65 @@ int main() {
         spawner.spawnRadius    = 22.0f;  // upper bound of the random spawn distance
         spawner.setDefs(enemyDefs, static_cast<int>(std::size(enemyDefs)));
 
+        // Difficulty scaling: per-wave HP multiplier on spawned enemies so
+        // sumOfWaveHP >= kHpScaleRatio * (player DPS * wave duration).
+        // Player DPS is approximated from current inventory composition.
+        constexpr float kHpScaleRatio    = 1.2f;   // total wave HP target vs player damage budget
+        constexpr float kHpScaleMaxMult  = 10.0f;  // cap so a tiny wave + heavy build doesn't make absurd 200-HP cats
+
+        auto playerExpectedDps = [](const game::Player& p) -> float {
+            float dps = 1.0f;  // baseline manual fire — ~1 dmg/sec assumed
+
+            // Auto Ring: each stack = 1 shot/sec, 1 dmg per hit.
+            dps += static_cast<float>(p.countItem(game::ItemId::AutoSyringeRing));
+
+            // Orbit Ring: contact damage on a 0.4s per-syringe cooldown; assume
+            // ~40% effective uptime against the swarm = ~1 dmg/sec/ring.
+            dps += static_cast<float>(p.countItem(game::ItemId::OrbitalRing)) * 1.0f;
+
+            // Hail Ring: 35 + 18(N-1) syringes per 5s, ~25% land near an enemy.
+            const int hail = p.countItem(game::ItemId::HailRing);
+            if (hail > 0) {
+                const int sy = 35 + 18 * (hail - 1);
+                dps += static_cast<float>(sy) * 0.25f / 5.0f;
+            }
+
+            // Explosive Auto: 2.5/2^(N-1) sec interval, ~5.5 dmg per shot
+            // (1 direct + 3 AoE * ~1.5 enemies hit on average).
+            const int explo = p.countItem(game::ItemId::ExplosiveAuto);
+            if (explo > 0) {
+                const float interval = 2.5f / std::pow(2.0f, static_cast<float>(explo - 1));
+                dps += 5.5f / interval;
+            }
+
+            // Lightning Ring: same interval, 1 direct + 3 chain = 4 dmg per shot.
+            const int light = p.countItem(game::ItemId::LightningRing);
+            if (light > 0) {
+                const float interval = 2.5f / std::pow(2.0f, static_cast<float>(light - 1));
+                dps += 4.0f / interval;
+            }
+            return dps;
+        };
+
+        auto computeHpMultiplier = [&](const game::Player& p,
+                                       const game::WaveDef* wave) -> float {
+            if (!wave || wave->duration <= 0.0f) return 1.0f;
+            const float dps   = playerExpectedDps(p);
+            const float total = dps * wave->duration;            // damage budget
+            float baseHp = 0.0f;
+            for (const auto& g : wave->groups) {
+                for (const auto& entry : g.entries) {
+                    const int idx = spawner.findDefIndex(entry.name);
+                    if (idx >= 0) baseHp += static_cast<float>(entry.count) *
+                                            static_cast<float>(enemyDefs[idx].maxHp);
+                }
+            }
+            if (baseHp < 1.0f) return 1.0f;
+            const float target = total * kHpScaleRatio;
+            const float mult   = target / baseHp;
+            return std::clamp(mult, 1.0f, kHpScaleMaxMult);
+        };
+
         game::WaveManager waveManager;
         {
             std::vector<game::WaveDef> waves;
@@ -712,16 +771,34 @@ int main() {
             // WaveManager owns scheduling now; falls back to the legacy spawner
             // tick only if no waves were loaded.
             if (waveManager.totalWaves() > 0) {
+                // Refresh the difficulty multiplier each frame so groups that
+                // spawn later in a wave reflect any items the player just
+                // grabbed mid-fight.
+                spawner.setHpMultiplier(
+                    computeHpMultiplier(player, waveManager.currentWave()));
                 waveManager.update(dt, enemies, player.position());
 
                 // Spawn one antidote box at the start of each new wave.
+                // Try a few angles and clamp into the wall-bounded area so
+                // the box is always reachable.
                 const int curWave = waveManager.currentWaveIndex();
                 if (!waveManager.finished() && curWave != antidoteSpawnedForWave) {
                     antidoteSpawnedForWave = curWave;
                     antidoteBoxes.clear();
-                    const float angle = game::rand01() * 6.28318530718f;
-                    const float spx = player.position().x + std::cos(angle) * game::kAntidoteSpawnDist;
-                    const float spz = player.position().z + std::sin(angle) * game::kAntidoteSpawnDist;
+                    // Inset accounts for the box's draw scale so the visual
+                    // never sticks through the wall geometry.
+                    const float boxBound = kWallHalfMap - kPlayerInset - 5.0f;
+                    float spx = 0.0f, spz = 0.0f;
+                    for (int attempt = 0; attempt < 6; ++attempt) {
+                        const float angle = game::rand01() * 6.28318530718f;
+                        spx = player.position().x + std::cos(angle) * game::kAntidoteSpawnDist;
+                        spz = player.position().z + std::sin(angle) * game::kAntidoteSpawnDist;
+                        if (std::abs(spx) <= boxBound && std::abs(spz) <= boxBound) break;
+                    }
+                    // Final clamp: even if every angle landed outside (player
+                    // standing in a corner), force the box back inside the walls.
+                    spx = std::clamp(spx, -boxBound, boxBound);
+                    spz = std::clamp(spz, -boxBound, boxBound);
                     game::AntidoteBox box;
                     box.position = glm::vec3(spx, terrain.heightAt(spx, spz), spz);
                     box.yawRad   = game::rand01() * 6.28318530718f;
@@ -1887,11 +1964,13 @@ int main() {
                     if (waveManager.finished()) {
                         std::snprintf(waveBuf, sizeof(waveBuf), "ALL WAVES CLEAR");
                     } else {
-                        std::snprintf(waveBuf, sizeof(waveBuf), "WAVE %d / %d  %s  %.0fs",
+                        std::snprintf(waveBuf, sizeof(waveBuf),
+                                      "WAVE %d / %d  %s  %.0fs  HPx%.1f",
                                       waveManager.currentWaveIndex() + 1,
                                       waveManager.totalWaves(),
                                       waveManager.currentWaveName().c_str(),
-                                      waveManager.waveTimeRemaining());
+                                      waveManager.waveTimeRemaining(),
+                                      spawner.hpMultiplier());
                     }
                     const std::string ws = waveBuf;
                     const float wScale = 1.6f;

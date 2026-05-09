@@ -54,9 +54,15 @@ void EnemySpawner::spawnAtIndex(std::vector<Enemy>& enemies, const glm::vec3& at
     Enemy e;
     e.position = glm::vec3(at.x, 0.0f, at.z);
     e.def = &defs_[defIndex];
-    e.hp  = e.def->maxHp;
+    // Scale base HP by the spawner's multiplier so wave totals track player power.
+    const float scaledHp = static_cast<float>(e.def->maxHp) * hpMultiplier_;
+    e.hp = std::max(1, static_cast<int>(std::round(scaledHp)));
     e.animator.setAnimation(e.def->walkAnim);
     enemies.push_back(e);
+}
+
+void EnemySpawner::setHpMultiplier(float m) {
+    hpMultiplier_ = std::max(1.0f, m);
 }
 
 void EnemySpawner::update(float dt, std::vector<Enemy>& enemies,

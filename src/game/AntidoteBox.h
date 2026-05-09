@@ -5,7 +5,7 @@
 namespace game {
 
 constexpr float kAntidotePickupRadius = 3.0f;   // metres; how close to auto-collect
-constexpr float kAntidoteScale        = 0.5f;   // uniform draw scale
+constexpr float kAntidoteScale        = 2.5f;   // uniform draw scale (5x bigger)
 constexpr float kAntidoteYOffset      = 0.5f;    // metres above terrain
 constexpr float kAntidoteSpawnDist    = 40.0f;   // metres from player at wave start
 constexpr float kAntidoteBasePitchDeg = 0.0f;    // X-rotation fix for Z-up GLB
