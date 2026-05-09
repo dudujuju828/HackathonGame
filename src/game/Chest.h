@@ -46,7 +46,9 @@ struct Chest {
 // Roll a rarity using the loot table (50/25/15/8/2).
 Rarity rollChestRarity();
 
-// Pick a uniformly random item from the available pool.
-ItemId rollChestItem();
+// Pick an item whose rarity matches the supplied tier. Falls back to lower
+// rarities if no item is registered at the requested tier (so the system
+// degrades gracefully as items are added/removed).
+ItemId rollChestItem(Rarity rarity);
 
 }  // namespace game

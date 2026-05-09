@@ -123,6 +123,30 @@ void StatsScreen::draw(render::Hud& hud, render::Text& text,
         char buf[64];
         std::snprintf(buf, sizeof(buf), "ORBITALS  %d", st.orbitalCount);
         text.draw(W, H, lx, y, buf, 2.0f, labelColor);
+        y += 34.0f;
+    }
+
+    // HAIL — number of stacked HailRings.
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "HAIL      %d", st.hailCount);
+        text.draw(W, H, lx, y, buf, 2.0f, labelColor);
+        y += 34.0f;
+    }
+
+    // EXPLOSIVE AUTO — AoE damage added to auto-fire shots.
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "EXPLO     %d", st.explosiveAutoCount);
+        text.draw(W, H, lx, y, buf, 2.0f, labelColor);
+        y += 34.0f;
+    }
+
+    // LIGHTNING — chain damage from lightning rings.
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "LIGHTNING %d", st.lightningCount);
+        text.draw(W, H, lx, y, buf, 2.0f, labelColor);
     }
 
     // ------------------------------------------------------------------ //

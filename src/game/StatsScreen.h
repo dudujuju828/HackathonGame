@@ -20,6 +20,9 @@ struct PlayerStats {
     int   level         = 1;
     float autoRingRate  = 0.0f;  // shots/sec from stacked AutoSyringeRings
     int   orbitalCount  = 0;     // number of stacked OrbitalRings
+    int   hailCount     = 0;     // number of stacked HailRings
+    int   explosiveAutoCount = 0;// number of stacked ExplosiveAuto
+    int   lightningCount = 0;    // number of stacked LightningRings
     std::vector<ItemInstance> items;
 };
 

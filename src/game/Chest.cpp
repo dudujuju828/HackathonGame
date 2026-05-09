@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace game {
 
@@ -17,9 +18,27 @@ Rarity rollChestRarity() {
     return Rarity::Legendary;
 }
 
-ItemId rollChestItem() {
-    const int idx = static_cast<int>(rand01() * static_cast<float>(kItemIdCount));
-    return static_cast<ItemId>(std::clamp(idx, 0, kItemIdCount - 1));
+ItemId rollChestItem(Rarity rarity) {
+    auto poolFor = [](Rarity r, std::vector<ItemId>& out) {
+        out.clear();
+        for (int i = 0; i < kItemIdCount; ++i) {
+            const auto id = static_cast<ItemId>(i);
+            if (itemRarity(id) == r) out.push_back(id);
+        }
+    };
+
+    std::vector<ItemId> pool;
+    poolFor(rarity, pool);
+    // Walk down the rarity tiers if nothing is registered at this one.
+    while (pool.empty() && static_cast<int>(rarity) > 0) {
+        rarity = static_cast<Rarity>(static_cast<int>(rarity) - 1);
+        poolFor(rarity, pool);
+    }
+    if (pool.empty()) return ItemId::AutoSyringeRing;
+
+    int idx = static_cast<int>(rand01() * static_cast<float>(pool.size()));
+    idx = std::clamp(idx, 0, static_cast<int>(pool.size()) - 1);
+    return pool[idx];
 }
 
 glm::vec3 Chest::currentTint() const {

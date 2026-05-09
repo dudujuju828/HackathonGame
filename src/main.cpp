@@ -285,8 +285,19 @@ int main() {
 
         float ringCooldown = 0.0f;
 
-        std::vector<game::ItemInstance> pendingLoot;
-        bool prevLootClick    = false;
+        // Achievement-style loot toast: each chest opening grants the item
+        // immediately and pushes a notification that slides in from the
+        // top-left, holds for a few seconds, then fades out. No scene change,
+        // no input gate — gameplay continues underneath.
+        struct LootToast {
+            game::ItemInstance item;
+            float age = 0.0f;
+        };
+        constexpr float kToastLifetime = 4.0f;   // seconds before it disappears
+        constexpr float kToastSlideIn  = 0.25f;  // seconds for the slide-in
+        constexpr float kToastFadeOut  = 0.5f;   // seconds for the fade-out tail
+        std::vector<LootToast> lootToasts;
+
         bool prevRestartKey   = false;
 
         // Orbital syringes: state for OrbitalRing item. cooldowns_[i] gates how
@@ -299,6 +310,33 @@ int main() {
         constexpr float kOrbitalCooldown  = 0.4f;   // seconds before a single syringe can hit again
         float orbitalAngle = 0.0f;
         std::vector<float> orbitalCooldowns;
+
+        // Hail ring: every kHailInterval seconds, rains kHailBaseCount + 2 per
+        // stack syringes within kHailRadius of the player from kHailHeight up.
+        constexpr float kHailInterval = 5.0f;   // seconds between hails
+        constexpr float kHailRadius   = 10.0f;  // metres of horizontal scatter
+        constexpr float kHailHeight   = 18.0f;  // spawn altitude above terrain
+        constexpr float kHailFallSpeed = 22.0f; // m/s downward
+        constexpr int   kHailBaseCount = 35;    // syringes per hail at 1 stack
+        constexpr int   kHailPerStack  = 18;    // additional syringes per extra stack
+        float hailCooldown = 1.5f;              // first hail comes a bit early
+
+        // Explosive auto: independent auto-firing weapon. Each shot bursts on
+        // impact, dealing AoE damage and emitting a red-orange particle puff.
+        // Base cooldown 2.5s; each additional stack halves it.
+        constexpr float kExplosiveBaseCooldown = 2.5f;
+        constexpr float kExplosiveRadius       = 2.8f;
+        constexpr int   kExplosiveDamage       = 3;     // AoE damage per burst
+        float explosiveCooldown = 0.5f;                 // first shot fires shortly after start
+
+        // Lightning ring: same fire timing as explosive. On enemy hit, chains
+        // to the kLightningChainCount nearest other enemies, dealing a
+        // smaller damage to each. Visualised as a vibrant cyan-blue arc.
+        constexpr float kLightningBaseCooldown = 2.5f;
+        constexpr int   kLightningChainCount   = 3;
+        constexpr int   kLightningChainDamage  = 1;
+        constexpr glm::vec3 kLightningTint(0.40f, 0.85f, 1.0f);  // bright cyan-blue
+        float lightningCooldown = 0.5f;
 
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
@@ -515,6 +553,20 @@ int main() {
                 p.position += p.velocity * dt;
                 p.age      += dt;
             }
+            // Sticky projectiles (hail) snap to the terrain on first contact
+            // and freeze in place. Their existing maxAge keeps them visible
+            // for a beat afterwards, so the field looks pin-cushioned.
+            for (auto& p : projectiles) {
+                if (!p.sticky) continue;
+                if (p.velocity.y >= 0.0f) continue;  // already stuck or rising
+                const float gh = terrain.heightAt(p.position.x, p.position.z);
+                if (p.position.y <= gh) {
+                    p.position.y = gh;
+                    p.velocity   = glm::vec3(0.0f);
+                    // Linger for a few seconds where it landed.
+                    p.maxAge     = p.age + 4.0f;
+                }
+            }
             // Spawn + advance enemies (also gated by Playing scene).
             // WaveManager owns scheduling now; falls back to the legacy spawner
             // tick only if no waves were loaded.
@@ -630,10 +682,10 @@ int main() {
                             glm::vec3 dir = glm::normalize(target->hitCentre() - spawn);
 
                             game::Projectile pj;
-                            pj.position = spawn;
-                            pj.velocity = dir * projectileSpeed;
-                            pj.scale    = projectileScale;
-                            pj.maxAge   = 3.0f;
+                            pj.position        = spawn;
+                            pj.velocity        = dir * projectileSpeed;
+                            pj.scale           = projectileScale;
+                            pj.maxAge          = 3.0f;
                             projectiles.push_back(pj);
                             ringCooldown = 1.0f / ringRate;
                         } else {
@@ -643,6 +695,135 @@ int main() {
                     }
                 } else {
                     ringCooldown = 0.0f;
+                }
+            }
+
+            // Explosive Auto ring: independent auto-fire weapon. Same spawn
+            // offset as Auto Ring (held-syringe tip), aimed at the nearest
+            // enemy. Each shot bursts on impact (red-orange particles + AoE).
+            // Cooldown halves with every additional stack.
+            {
+                const int explosiveStacks = player.countItem(game::ItemId::ExplosiveAuto);
+                if (explosiveStacks > 0) {
+                    explosiveCooldown -= dt;
+                    if (explosiveCooldown <= 0.0f) {
+                        const float kRange = 25.0f;
+                        game::Enemy* target = nullptr;
+                        float bestD2 = kRange * kRange;
+                        for (auto& e : enemies) {
+                            if (!e.alive()) continue;
+                            glm::vec3 d = e.hitCentre() - cam.position;
+                            float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+                            if (d2 < bestD2) { bestD2 = d2; target = &e; }
+                        }
+                        if (target) {
+                            glm::vec3 baseFwd   = cam.forward();
+                            glm::vec3 baseRight = glm::normalize(glm::cross(baseFwd, glm::vec3(0,1,0)));
+                            glm::vec3 up        = glm::cross(baseRight, baseFwd);
+                            glm::vec3 spawn = cam.position
+                                            + baseFwd  * 0.45f
+                                            + baseRight * 0.18f
+                                            - up        * 0.45f;
+                            glm::vec3 dir = glm::normalize(target->hitCentre() - spawn);
+
+                            game::Projectile pj;
+                            pj.position        = spawn;
+                            pj.velocity        = dir * projectileSpeed;
+                            pj.scale           = projectileScale;
+                            pj.maxAge          = 3.0f;
+                            pj.explosiveDamage = kExplosiveDamage;  // > 0 marks it as explosive
+                            projectiles.push_back(pj);
+
+                            // 2.5s, halved per additional stack.
+                            explosiveCooldown =
+                                kExplosiveBaseCooldown /
+                                std::pow(2.0f, static_cast<float>(explosiveStacks - 1));
+                        } else {
+                            explosiveCooldown = 0.25f;
+                        }
+                    }
+                } else {
+                    explosiveCooldown = 0.0f;
+                }
+            }
+
+            // Lightning ring: same fire timing as Explosive. On hit, chains
+            // damage to the kLightningChainCount nearest other enemies and
+            // draws a vibrant cyan-blue arc to each.
+            {
+                const int lightningStacks = player.countItem(game::ItemId::LightningRing);
+                if (lightningStacks > 0) {
+                    lightningCooldown -= dt;
+                    if (lightningCooldown <= 0.0f) {
+                        const float kRange = 25.0f;
+                        game::Enemy* target = nullptr;
+                        float bestD2 = kRange * kRange;
+                        for (auto& e : enemies) {
+                            if (!e.alive()) continue;
+                            glm::vec3 d = e.hitCentre() - cam.position;
+                            float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+                            if (d2 < bestD2) { bestD2 = d2; target = &e; }
+                        }
+                        if (target) {
+                            glm::vec3 baseFwd   = cam.forward();
+                            glm::vec3 baseRight = glm::normalize(glm::cross(baseFwd, glm::vec3(0,1,0)));
+                            glm::vec3 up        = glm::cross(baseRight, baseFwd);
+                            glm::vec3 spawn = cam.position
+                                            + baseFwd  * 0.45f
+                                            + baseRight * 0.18f
+                                            - up        * 0.45f;
+                            glm::vec3 dir = glm::normalize(target->hitCentre() - spawn);
+
+                            game::Projectile pj;
+                            pj.position        = spawn;
+                            pj.velocity        = dir * projectileSpeed;
+                            pj.scale           = projectileScale;
+                            pj.maxAge          = 3.0f;
+                            pj.lightningDamage = kLightningChainDamage;  // > 0 marks it as lightning
+                            projectiles.push_back(pj);
+
+                            lightningCooldown =
+                                kLightningBaseCooldown /
+                                std::pow(2.0f, static_cast<float>(lightningStacks - 1));
+                        } else {
+                            lightningCooldown = 0.25f;
+                        }
+                    }
+                } else {
+                    lightningCooldown = 0.0f;
+                }
+            }
+
+            // Hail ring: every kHailInterval, rains syringes within kHailRadius.
+            {
+                const int hailStacks = player.countItem(game::ItemId::HailRing);
+                if (hailStacks > 0) {
+                    hailCooldown -= dt;
+                    if (hailCooldown <= 0.0f) {
+                        hailCooldown += kHailInterval;
+                        const int count = kHailBaseCount + kHailPerStack * (hailStacks - 1);
+                        const float gh = terrain.heightAt(player.position().x,
+                                                          player.position().z);
+                        for (int i = 0; i < count; ++i) {
+                            // Uniform-area sample inside the hail radius.
+                            const float angle = game::rand01() * 6.28318530718f;
+                            const float r     = std::sqrt(game::rand01()) * kHailRadius;
+                            game::Projectile pj;
+                            pj.position = glm::vec3(player.position().x + std::cos(angle) * r,
+                                                    gh + kHailHeight,
+                                                    player.position().z + std::sin(angle) * r);
+                            pj.velocity = glm::vec3(0.0f, -kHailFallSpeed, 0.0f);
+                            pj.scale    = projectileScale * 4.0f;  // chunky so the storm reads at distance
+                            // Long lifetime: enough for the fall + the stick.
+                            // Will be re-clamped by the terrain-snap pass below
+                            // once the syringe lands.
+                            pj.maxAge   = 8.0f;
+                            pj.sticky   = true;
+                            projectiles.push_back(pj);
+                        }
+                    }
+                } else {
+                    hailCooldown = kHailInterval;
                 }
             }
 
@@ -682,7 +863,7 @@ int main() {
                                         c.position   = e.position;
                                         c.yawRad     = game::rand01() * 6.28318530718f;
                                         c.rolled     = game::rollChestRarity();
-                                        c.itemId     = game::rollChestItem();
+                                        c.itemId     = game::rollChestItem(c.rolled);
                                         c.state      = game::ChestState::Opening;
                                         c.openTimer  = 0.0f;
                                         c.cyclePhase = 1.0f;
@@ -699,6 +880,26 @@ int main() {
 
             // Projectile <-> enemy hit detection. Sphere-vs-point. First alive
             // enemy within radius takes the hit and ends the projectile.
+            // Helper: rolls a chest drop on enemy death + grants XP. Used by
+            // both the direct-hit path and the explosive-AoE path so kills
+            // from either route reward identically.
+            auto onEnemyKilled = [&](const game::Enemy& dead) {
+                player.addXp(game::kEnemyXpReward);
+                const float drop = dead.def ? dead.def->dropChance : game::kChestDropChance;
+                if (game::rand01() < drop) {
+                    game::Chest c;
+                    c.position   = dead.position;
+                    c.yawRad     = game::rand01() * 6.28318530718f;
+                    c.rolled     = game::rollChestRarity();
+                    c.itemId     = game::rollChestItem(c.rolled);
+                    c.state      = game::ChestState::Opening;
+                    c.openTimer  = 0.0f;
+                    c.cyclePhase = 1.0f;
+                    c.animator.setAnimation(chestOpenAnim, /*loop=*/false);
+                    chests.push_back(c);
+                }
+            };
+
             for (auto& p : projectiles) {
                 if (!p.alive()) continue;
                 for (auto& e : enemies) {
@@ -706,22 +907,126 @@ int main() {
                     float hitRadius = e.def ? e.def->radius : game::kEnemyRadius;
                     if (glm::distance(p.position, e.hitCentre()) < hitRadius) {
                         e.hp -= 1;
+                        const glm::vec3 impact = p.position;
+                        const int explosiveDmg = p.explosiveDamage;
                         p.age = p.maxAge;          // mark projectile for cull
                         if (!e.alive()) {
-                            player.addXp(game::kEnemyXpReward);
-                            // Roll for chest drop — per-enemy chance from EnemyDef.
-                            const float drop = e.def ? e.def->dropChance : game::kChestDropChance;
-                            if (game::rand01() < drop) {
-                                game::Chest c;
-                                c.position   = e.position;
-                                c.yawRad     = game::rand01() * 6.28318530718f;
-                                c.rolled     = game::rollChestRarity();
-                                c.itemId     = game::rollChestItem();
-                                c.state      = game::ChestState::Opening;
-                                c.openTimer  = 0.0f;
-                                c.cyclePhase = 1.0f;  // forces a tint pick on the first tick
-                                c.animator.setAnimation(chestOpenAnim, /*loop=*/false);
-                                chests.push_back(c);
+                            onEnemyKilled(e);
+                        }
+                        // Explosive auto: AoE damage + bright red-orange burst
+                        // particle puff at impact. The directly-hit enemy
+                        // already took the base 1 dmg above; AoE pass skips
+                        // them to avoid double-counting.
+                        if (explosiveDmg > 0) {
+                            for (auto& other : enemies) {
+                                if (!other.alive()) continue;
+                                if (&other == &e) continue;
+                                if (glm::distance(impact, other.hitCentre()) <= kExplosiveRadius) {
+                                    other.hp -= explosiveDmg;
+                                    if (!other.alive()) onEnemyKilled(other);
+                                }
+                            }
+                            // Visual ignition — ~70 particles, hemisphere bias
+                            // upward + outward, bright red-orange fire palette.
+                            const int kBurstCount = 70;
+                            for (int i = 0; i < kBurstCount; ++i) {
+                                const float az = game::rand01() * 6.28318530718f;
+                                const float el = game::rand01() * 1.10f + 0.10f;  // 0.10..1.20 rad up
+                                const float spd = 4.0f + game::rand01() * 5.0f;
+                                const glm::vec3 vel(std::cos(az) * std::cos(el) * spd,
+                                                    std::sin(el) * spd,
+                                                    std::sin(az) * std::cos(el) * spd);
+                                const float t = game::rand01();
+                                render::Particle pp;
+                                pp.position = impact;
+                                pp.velocity = vel;
+                                // Mix from hot yellow-orange to deep red.
+                                pp.color = glm::vec4(1.0f,
+                                                     0.25f + t * 0.45f,
+                                                     0.05f + t * 0.10f,
+                                                     1.0f);
+                                pp.life = 0.55f + game::rand01() * 0.35f;
+                                pp.age  = 0.0f;
+                                pp.size = 28.0f + game::rand01() * 18.0f;
+                                particles.emit(pp);
+                            }
+                        }
+
+                        // Lightning ring: chain to the N nearest other enemies
+                        // and draw a vibrant cyan-blue arc to each.
+                        if (p.lightningDamage > 0) {
+                            // Build a list of other alive enemies sorted by
+                            // distance to the impact, take up to N.
+                            struct ChainCandidate { float d2; game::Enemy* en; };
+                            std::vector<ChainCandidate> cands;
+                            cands.reserve(enemies.size());
+                            for (auto& other : enemies) {
+                                if (!other.alive()) continue;
+                                if (&other == &e) continue;
+                                glm::vec3 d = other.hitCentre() - impact;
+                                cands.push_back({ d.x*d.x + d.y*d.y + d.z*d.z, &other });
+                            }
+                            std::sort(cands.begin(), cands.end(),
+                                [](const ChainCandidate& a, const ChainCandidate& b){
+                                    return a.d2 < b.d2;
+                                });
+                            const int hits = std::min(kLightningChainCount,
+                                                       static_cast<int>(cands.size()));
+                            for (int k = 0; k < hits; ++k) {
+                                ChainCandidate& c = cands[k];
+                                c.en->hp -= p.lightningDamage;
+                                if (!c.en->alive()) onEnemyKilled(*c.en);
+
+                                // Particle arc — many small bright cyan
+                                // particles strung along a jittered line so
+                                // it reads as a flickering bolt.
+                                const glm::vec3 a = impact;
+                                const glm::vec3 b = c.en->hitCentre();
+                                const glm::vec3 ab = b - a;
+                                const float len = glm::length(ab);
+                                if (len < 1e-3f) continue;
+                                const glm::vec3 dir = ab / len;
+                                // Perpendicular axes for the jagged offset.
+                                const glm::vec3 ref = std::abs(dir.y) > 0.9f
+                                                        ? glm::vec3(1, 0, 0)
+                                                        : glm::vec3(0, 1, 0);
+                                const glm::vec3 perp1 = glm::normalize(glm::cross(dir, ref));
+                                const glm::vec3 perp2 = glm::cross(dir, perp1);
+                                const int segs = std::clamp(int(len * 3.0f), 12, 80);
+                                const float jitter = std::min(0.18f, len * 0.04f);
+                                for (int s = 0; s < segs; ++s) {
+                                    const float t = static_cast<float>(s) / (segs - 1);
+                                    const float jx = (game::rand01() - 0.5f) * 2.0f * jitter;
+                                    const float jy = (game::rand01() - 0.5f) * 2.0f * jitter;
+                                    glm::vec3 pos = a + ab * t + perp1 * jx + perp2 * jy;
+                                    render::Particle pp;
+                                    pp.position = pos;
+                                    pp.velocity = glm::vec3(0.0f);
+                                    pp.color = glm::vec4(kLightningTint.x,
+                                                         kLightningTint.y,
+                                                         kLightningTint.z,
+                                                         1.0f);
+                                    pp.life = 0.18f + game::rand01() * 0.12f;
+                                    pp.age  = 0.0f;
+                                    pp.size = 18.0f + game::rand01() * 10.0f;
+                                    particles.emit(pp);
+                                }
+                                // White-hot sparkle at the chained enemy.
+                                for (int s = 0; s < 14; ++s) {
+                                    const float az = game::rand01() * 6.28318530718f;
+                                    const float el = game::rand01() * 1.5f - 0.2f;
+                                    const float spd = 2.5f + game::rand01() * 3.0f;
+                                    render::Particle pp;
+                                    pp.position = b;
+                                    pp.velocity = glm::vec3(std::cos(az) * std::cos(el) * spd,
+                                                            std::sin(el) * spd,
+                                                            std::sin(az) * std::cos(el) * spd);
+                                    pp.color = glm::vec4(0.85f, 0.95f, 1.0f, 1.0f);
+                                    pp.life = 0.30f + game::rand01() * 0.20f;
+                                    pp.age  = 0.0f;
+                                    pp.size = 22.0f + game::rand01() * 12.0f;
+                                    particles.emit(pp);
+                                }
                             }
                         }
                         break;
@@ -753,7 +1058,10 @@ int main() {
                         c.state     = game::ChestState::Fading;
                         c.fadeTimer = 0.0f;
                         c.cycleTint = game::rarityColor(c.rolled);
-                        pendingLoot.push_back({ c.itemId, c.rolled });
+                        // Grant immediately + queue a top-left toast.
+                        const game::ItemInstance got { c.itemId, c.rolled };
+                        player.grantItem(got);
+                        lootToasts.push_back({ got, 0.0f });
                     }
 
                     // Emit upward-rising particles in the chest's current colour.
@@ -817,29 +1125,13 @@ int main() {
                     [](const game::Chest& c){ return c.state == game::ChestState::Done; }),
                 chests.end());
 
-            // Hand off to the loot popup as soon as a chest finishes opening.
-            if (!pendingLoot.empty() && scene == game::Scene::Playing) {
-                scene = game::Scene::Loot;
-                glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-                input.resetMouseDelta();
-                prevLootClick = input.mouseButton(GLFW_MOUSE_BUTTON_LEFT);
-            }
-
-            // Loot scene: click anywhere to claim the front item and continue.
-            if (scene == game::Scene::Loot) {
-                const bool curClick = input.mouseButton(GLFW_MOUSE_BUTTON_LEFT);
-                const bool justClicked = curClick && !prevLootClick;
-                prevLootClick = curClick;
-                if (justClicked && !pendingLoot.empty()) {
-                    player.grantItem(pendingLoot.front());
-                    pendingLoot.erase(pendingLoot.begin());
-                    if (pendingLoot.empty()) {
-                        scene = game::Scene::Playing;
-                        glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                        input.resetMouseDelta();
-                    }
-                }
-            }
+            // Tick loot toasts (always, regardless of scene) and cull the
+            // ones whose lifetime has elapsed.
+            for (auto& t : lootToasts) t.age += dt;
+            lootToasts.erase(
+                std::remove_if(lootToasts.begin(), lootToasts.end(),
+                    [&](const LootToast& t){ return t.age >= kToastLifetime; }),
+                lootToasts.end());
 
             // GameOver: R key (or Enter) restarts everything from scratch.
             if (scene == game::Scene::GameOver) {
@@ -857,7 +1149,7 @@ int main() {
                     antidoteBoxes.clear();
                     antidoteSpawnedForWave = -1;
                     projectiles.clear();
-                    pendingLoot.clear();
+                    lootToasts.clear();
                     orbitalCooldowns.clear();
                     orbitalAngle = 0.0f;
                     ringCooldown = 0.0f;
@@ -1092,9 +1384,14 @@ int main() {
                 GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
                 glDisable(GL_CULL_FACE);
                 for (const auto& p : projectiles) {
-                    glm::vec3 vfwd = glm::length(p.velocity) > 1e-4f
-                                       ? glm::normalize(p.velocity)
-                                       : glm::vec3(0, 0, -1);
+                    glm::vec3 vfwd;
+                    if (glm::length(p.velocity) > 1e-4f) {
+                        vfwd = glm::normalize(p.velocity);
+                    } else if (p.sticky) {
+                        vfwd = glm::vec3(0.0f, -1.0f, 0.0f);  // landed: tip points into ground
+                    } else {
+                        vfwd = glm::vec3(0.0f, 0.0f, -1.0f);
+                    }
                     glm::vec3 ref  = std::abs(vfwd.y) > 0.99f
                                        ? glm::vec3(1, 0, 0)
                                        : glm::vec3(0, 1, 0);
@@ -1112,9 +1409,17 @@ int main() {
                     M = glm::scale(M, glm::vec3(p.scale * shrinkMul));
 
                     worldShader.setMat4("uModel", M);
+                    // Lightning shots glow bright cyan-blue while in flight;
+                    // others render with the default white tint.
+                    if (p.lightningDamage > 0) {
+                        worldShader.setVec3("uTint", kLightningTint * 1.6f);
+                    }
                     for (const auto& sub : syringeModel.meshes()) {
                         if (sub.diffuse) sub.diffuse->bind(0);
                         sub.mesh.draw();
+                    }
+                    if (p.lightningDamage > 0) {
+                        worldShader.setVec3("uTint", glm::vec3(1.0f));
                     }
                 }
                 if (cullWas) glEnable(GL_CULL_FACE);
@@ -1346,58 +1651,6 @@ int main() {
                 settingsMenu.draw(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::LevelUp) {
                 levelUpMenu.draw(hud, text, window.width(), window.height());
-            } else if (scene == game::Scene::Loot) {
-                if (!pendingLoot.empty()) {
-                    const auto& item = pendingLoot.front();
-                    const int W = window.width();
-                    const int H = window.height();
-
-                    const float panelW = 460.0f;
-                    const float panelH = 200.0f;
-                    const float panelX = W * 0.5f - panelW * 0.5f;
-                    const float panelY = H * 0.5f - panelH * 0.5f;
-
-                    const glm::vec3 rcol  = game::rarityColor(item.rarity);
-                    const glm::vec3 panel { 0.05f, 0.04f, 0.04f };
-
-                    hud.drawRect(W, H, glm::vec2(0, 0),
-                                 glm::vec2(static_cast<float>(W), static_cast<float>(H)),
-                                 glm::vec3(0.0f), 0.55f);
-                    hud.drawProgress(W, H, glm::vec2(panelX, panelY),
-                                     glm::vec2(panelW, panelH),
-                                     1.0f, panel, panel, rcol, 2.5f, 0.96f);
-
-                    {
-                        const std::string title = "YOU OBTAINED";
-                        const float sc = 1.8f;
-                        const float w  = render::Text::measure(title) * sc;
-                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
-                                  panelY + 28.0f, title, sc,
-                                  glm::vec4(0.85f, 0.80f, 0.78f, 1.0f));
-                    }
-                    {
-                        const std::string rar = game::rarityName(item.rarity);
-                        const float sc = 1.6f;
-                        const float w  = render::Text::measure(rar) * sc;
-                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
-                                  panelY + 60.0f, rar, sc, glm::vec4(rcol, 1.0f));
-                    }
-                    {
-                        const std::string nm = game::itemName(item.id);
-                        const float sc = 3.5f;
-                        const float w  = render::Text::measure(nm) * sc;
-                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
-                                  panelY + 92.0f, nm, sc, glm::vec4(rcol, 1.0f));
-                    }
-                    {
-                        const std::string hint = "[CLICK TO CONTINUE]";
-                        const float sc = 1.4f;
-                        const float w  = render::Text::measure(hint) * sc;
-                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
-                                  panelY + panelH - 32.0f, hint, sc,
-                                  glm::vec4(0.65f, 0.55f, 0.55f, 1.0f));
-                    }
-                }
             } else if (scene == game::Scene::GameOver) {
                 const int W = window.width();
                 const int H = window.height();
@@ -1455,8 +1708,61 @@ int main() {
                 ps.level        = player.level();
                 ps.autoRingRate = player.autoRingRate();
                 ps.orbitalCount = player.countItem(game::ItemId::OrbitalRing);
+                ps.hailCount    = player.countItem(game::ItemId::HailRing);
+                ps.explosiveAutoCount = player.countItem(game::ItemId::ExplosiveAuto);
+                ps.lightningCount = player.countItem(game::ItemId::LightningRing);
                 ps.items        = player.inventory();
                 statsScreen.draw(hud, text, window.width(), window.height(), ps);
+            }
+
+            // Loot toasts — top-left achievement style. Slide in, hold, fade.
+            // Drawn over any scene so the player sees pickups even mid-menu.
+            if (!lootToasts.empty()) {
+                const int W = window.width();
+                const int H = window.height();
+                const float toastW   = 360.0f;
+                const float toastH   = 64.0f;
+                const float gap      = 8.0f;
+                const float marginX  = 24.0f;
+                const float marginY  = 24.0f;
+                for (size_t i = 0; i < lootToasts.size(); ++i) {
+                    const LootToast& t = lootToasts[i];
+                    // Slide in from off-screen left for the first kToastSlideIn
+                    // seconds, then hold, then fade alpha to zero in the tail.
+                    float slide = std::clamp(t.age / kToastSlideIn, 0.0f, 1.0f);
+                    // Smooth ease-out for the entry.
+                    slide = 1.0f - (1.0f - slide) * (1.0f - slide);
+                    const float fade = (t.age > kToastLifetime - kToastFadeOut)
+                        ? std::clamp((kToastLifetime - t.age) / kToastFadeOut, 0.0f, 1.0f)
+                        : 1.0f;
+                    const float x = -toastW + (marginX + toastW) * slide;
+                    const float y = marginY + static_cast<float>(i) * (toastH + gap);
+                    const glm::vec3 rcol = game::rarityColor(t.item.rarity);
+                    const glm::vec3 panelCol(0.05f, 0.04f, 0.04f);
+                    const float opacity = 0.92f * fade;
+
+                    hud.drawProgress(W, H, glm::vec2(x, y),
+                                     glm::vec2(toastW, toastH),
+                                     1.0f, panelCol, panelCol, rcol, 2.0f, opacity);
+
+                    // Rarity-coloured accent stripe on the left edge.
+                    hud.drawRect(W, H, glm::vec2(x, y),
+                                 glm::vec2(5.0f, toastH), rcol, opacity);
+
+                    // "OBTAINED" small label, then item name in rarity colour.
+                    const float textX = x + 16.0f;
+                    text.draw(W, H, textX, y + 12.0f, "OBTAINED", 1.1f,
+                              glm::vec4(0.78f, 0.74f, 0.72f, opacity));
+                    text.draw(W, H, textX, y + 30.0f,
+                              game::itemName(t.item.id), 2.1f,
+                              glm::vec4(rcol, opacity));
+                    // Rarity name on the right.
+                    const std::string rname = game::rarityName(t.item.rarity);
+                    const float rscale = 1.1f;
+                    const float rw = render::Text::measure(rname) * rscale;
+                    text.draw(W, H, x + toastW - rw - 14.0f, y + toastH - 16.0f,
+                              rname, rscale, glm::vec4(rcol, opacity * 0.85f));
+                }
             }
 
             // Software cursor — drawn on top of any menu so the player can

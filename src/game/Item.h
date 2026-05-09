@@ -39,9 +39,12 @@ inline glm::vec3 rarityColor(Rarity r) {
 enum class ItemId {
     AutoSyringeRing,
     OrbitalRing,
+    HailRing,
+    ExplosiveAuto,
+    LightningRing,
 };
 
-constexpr int kItemIdCount = 2;
+constexpr int kItemIdCount = 5;
 
 struct ItemInstance {
     ItemId id;
@@ -52,6 +55,9 @@ inline const char* itemName(ItemId id) {
     switch (id) {
         case ItemId::AutoSyringeRing: return "AUTO RING";
         case ItemId::OrbitalRing:     return "ORBIT RING";
+        case ItemId::HailRing:        return "HAIL RING";
+        case ItemId::ExplosiveAuto:   return "EXPLOSIVE AUTO";
+        case ItemId::LightningRing:   return "LIGHTNING RING";
     }
     return "?";
 }
@@ -60,8 +66,23 @@ inline const char* itemDesc(ItemId id) {
     switch (id) {
         case ItemId::AutoSyringeRing: return "Auto-fires at the nearest enemy.";
         case ItemId::OrbitalRing:     return "Orbits a syringe that damages on touch.";
+        case ItemId::HailRing:        return "Every 5s, rains syringes within 10m.";
+        case ItemId::ExplosiveAuto:   return "Auto-fire shots burst on impact.";
+        case ItemId::LightningRing:   return "Auto-fire chains to 3 nearest enemies.";
     }
     return "";
+}
+
+// Each item is bound to a fixed rarity tier — chests of that rarity grant it.
+inline Rarity itemRarity(ItemId id) {
+    switch (id) {
+        case ItemId::AutoSyringeRing: return Rarity::Common;
+        case ItemId::OrbitalRing:     return Rarity::Common;
+        case ItemId::HailRing:        return Rarity::Uncommon;
+        case ItemId::ExplosiveAuto:   return Rarity::Rare;
+        case ItemId::LightningRing:   return Rarity::Rare;
+    }
+    return Rarity::Common;
 }
 
 }  // namespace game
