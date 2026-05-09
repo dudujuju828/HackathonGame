@@ -9,54 +9,54 @@
 # Pig 14 / Bulldog 20) the player has to thin the swarm constantly or
 # get overwhelmed.
 
-WAVE "First Contact" 30
+WAVE "First Contact: Calici" 30
 GROUP  0   Cat 8 Chicken 4
 GROUP  6   Chicken 8
 GROUP 14   Cat 10 Chicken 6
 GROUP 22   Chicken 10 Cat 6
 
-WAVE "Murmur" 35
+WAVE "Avian Strain" 35
 GROUP  0   Chicken 12 Cat 6
 GROUP  7   Cat 14
 GROUP 15   Chicken 12 Cat 8
 GROUP 24   Cat 16 Chicken 8
 
-WAVE "Wings" 40
+WAVE "Twisted" 40
 GROUP  0   Harpy 6 Cat 8
 GROUP  7   Cat 12 Chicken 8
 GROUP 16   Harpy 8 Chicken 6
 GROUP 26   Chicken 14 Cat 10
 GROUP 34   Harpy 6 Cat 8
 
-WAVE "Pestilence" 45
+WAVE "Hydrophobia" 45
 GROUP  0   Cat 16 Chicken 12
 GROUP  9   Harpy 10
 GROUP 18   Cat 14 Chicken 14
 GROUP 28   Harpy 8 Cat 12
 GROUP 38   Chicken 16 Harpy 6
 
-WAVE "Snarl" 50
+WAVE "Parvoviral" 50
 GROUP  0   Bulldog 4 Chicken 8
 GROUP  8   Chicken 14 Cat 8
 GROUP 18   Cat 16 Harpy 8
 GROUP 30   Bulldog 6 Chicken 12
 GROUP 42   Cat 12 Harpy 6 Bulldog 3
 
-WAVE "Pack" 55
+WAVE "Distemper" 55
 GROUP  0   Bulldog 6 Cat 12
 GROUP 10   Chicken 16 Harpy 8
 GROUP 22   Bulldog 8 Cat 10
 GROUP 34   Chicken 14 Harpy 8
 GROUP 46   Cat 16 Chicken 14 Harpy 6 Bulldog 4
 
-WAVE "Glutton" 55
+WAVE "Hemorrhage" 55
 GROUP  0   Pig 6 Cat 10
 GROUP  9   Bulldog 5 Chicken 12
 GROUP 20   Pig 6 Cat 14
 GROUP 32   Pig 8 Chicken 12
 GROUP 44   Harpy 10 Pig 6 Bulldog 4
 
-WAVE "Outbreak" 60
+WAVE "Blue Tongue" 60
 GROUP  0   Cat 22 Chicken 16
 GROUP 10   Pig 8 Harpy 8
 GROUP 20   Bulldog 8 Cat 14 Chicken 10
@@ -64,7 +64,7 @@ GROUP 32   Pig 8 Chicken 16 Harpy 8
 GROUP 44   Bulldog 6 Pig 6 Cat 12
 GROUP 54   Chicken 14 Harpy 8
 
-WAVE "Convulsion" 70
+WAVE "Lockjaw" 70
 GROUP  0   Bulldog 8 Pig 6 Cat 14
 GROUP 10   Cat 22 Chicken 22 Harpy 10
 GROUP 24   Bulldog 8 Pig 8 Chicken 14
@@ -72,7 +72,7 @@ GROUP 38   Cat 20 Chicken 20 Harpy 12
 GROUP 52   Bulldog 10 Pig 8 Cat 14
 GROUP 64   Chicken 18 Harpy 10
 
-WAVE "Final Hour" 90
+WAVE "Final Hour: Wasting" 90
 GROUP  0   Bulldog 8 Pig 8 Harpy 8 Cat 12
 GROUP 10   Cat 30 Chicken 30
 GROUP 22   Bulldog 12 Pig 10 Chicken 14
