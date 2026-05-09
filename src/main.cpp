@@ -829,6 +829,53 @@ int main() {
                 std::remove_if(antidoteBoxes.begin(), antidoteBoxes.end(),
                     [](const game::AntidoteBox& b){ return b.state == game::AntidoteBoxState::Collected; }),
                 antidoteBoxes.end());
+
+            // Beacon to the sky — a dense vertical pillar of bright green
+            // particles rising 40m above each active box. Each frame we
+            // emit a column of short-lived sparks evenly spaced along the
+            // height; constant respawn rate makes it read as a beam.
+            {
+                constexpr float kBeamHeight     = 40.0f;
+                constexpr int   kBeamPartsPerBox = 90;     // particles emitted per box per frame
+                constexpr float kBeamRadius     = 0.09f;   // horizontal jitter (metres)
+                for (const auto& box : antidoteBoxes) {
+                    if (box.state != game::AntidoteBoxState::Active) continue;
+                    const float gh = terrain.heightAt(box.position.x, box.position.z);
+                    const float baseY = gh + game::kAntidoteYOffset + 0.2f;
+                    for (int i = 0; i < kBeamPartsPerBox; ++i) {
+                        const float t01   = game::rand01();          // height fraction
+                        const float az    = game::rand01() * 6.28318530718f;
+                        const float r     = std::sqrt(game::rand01()) * kBeamRadius;
+                        render::Particle pp;
+                        pp.position = glm::vec3(box.position.x + std::cos(az) * r,
+                                                baseY + t01 * kBeamHeight,
+                                                box.position.z + std::sin(az) * r);
+                        // Slow upward drift; keeps the column alive briefly.
+                        pp.velocity = glm::vec3(0.0f,
+                                                0.5f + game::rand01() * 0.4f,
+                                                0.0f);
+                        const float ct = game::rand01();
+                        // Hot core toward white, cooler edges toward green.
+                        pp.color = glm::vec4(0.55f + ct * 0.45f,
+                                             1.0f,
+                                             0.55f + ct * 0.30f,
+                                             1.0f);
+                        pp.life  = 0.18f + game::rand01() * 0.10f;   // short — beam stays "still"
+                        pp.age   = 0.0f;
+                        // pp.size feeds gl_PointSize via aSize*viewportH/clip.w
+                        // in particle.vert. The GPU clamps gl_PointSize at
+                        // GL_POINT_SIZE_MAX (often ~64-256 px), so any
+                        // "size" big enough to land above the clamp at 30 m
+                        // distance produces an identical-looking blob no
+                        // matter how much you shrink it. Keep aSize sub-1
+                        // so the formula stays under the clamp and actually
+                        // honours our radius.
+                        pp.size  = 0.55f - t01 * 0.20f + game::rand01() * 0.10f;
+                        particles.emit(pp);
+                    }
+
+                }
+            }
             // Pathfinding is XZ only (handled in Enemy::update). Y is forced
             // to the terrain height under each enemy every frame so the model
             // tracks the surface and never clips into hills.
@@ -1603,11 +1650,17 @@ int main() {
                 worldShader.use();
             }
 
-            // Antidote boxes — hovering, slowly rotating, green-glowing.
+            // Antidote boxes — natural texture with a subtle green pulse so
+            // the box itself reads as faintly self-luminous (the vertical
+            // beam handles long-distance visibility).
             if (!antidoteBoxes.empty()) {
+                const float boxPulse = 1.05f + 0.10f * std::sin(time.total() * 2.5f);
+                const glm::vec3 boxTint(0.95f * boxPulse,
+                                        1.20f * boxPulse,
+                                        1.00f * boxPulse);
                 worldShader.setInt  ("uHasBones", 0);
                 worldShader.setFloat("uAlpha",    1.0f);
-                worldShader.setVec3 ("uTint",     glm::vec3(0.3f, 0.85f, 0.4f));
+                worldShader.setVec3 ("uTint",     boxTint);
                 checker.bind(0);
                 for (const auto& box : antidoteBoxes) {
                     if (box.state != game::AntidoteBoxState::Active) continue;
@@ -1627,20 +1680,8 @@ int main() {
                 }
                 worldShader.setVec3("uTint", glm::vec3(1.0f));
 
-                // Green glow disc beneath each active box.
-                {
-                    const glm::mat4 vp2 = cam.proj(window.aspect()) * cam.view();
-                    for (const auto& box : antidoteBoxes) {
-                        if (box.state != game::AntidoteBoxState::Active) continue;
-                        const float gh = terrain.heightAt(box.position.x, box.position.z);
-                        glow.draw(vp2,
-                                  glm::vec3(box.position.x, gh + 0.02f, box.position.z),
-                                  /*radius=*/2.2f,
-                                  glm::vec3(0.3f, 1.0f, 0.45f),
-                                  /*intensity=*/1.3f);
-                    }
-                    worldShader.use();
-                }
+                // (No ground glow disc — the beacon's vertical particle
+                // beam carries the visibility on its own.)
             }
 
             // Particles render after chests so they sit on top of the glow disc.
