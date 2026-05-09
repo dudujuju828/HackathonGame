@@ -8,7 +8,7 @@ namespace game {
 struct Settings {
     float hFovDeg       = 116.0f;  // horizontal FOV (deg)
     float flashlightDeg = 45.0f;   // flashlight outer-cone half-angle (deg)
-    bool  fullscreen    = false;
+    bool  fullscreen    = true;
     int   mapIndex      = 0;
 
     static constexpr int kMapCount = 3;

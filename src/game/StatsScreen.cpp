@@ -107,6 +107,22 @@ void StatsScreen::draw(render::Hud& hud, render::Text& text,
             ? std::clamp(st.stamina / st.maxStamina, 0.0f, 1.0f) : 0.0f;
         hud.drawProgress(W, H, glm::vec2(lx, y), glm::vec2(lbarW, kBarH),
                          frac, stFill, stEmpty, stBorder, 1.0f, 0.92f);
+        y += kBarH + 22.0f;
+    }
+
+    // AUTO-FIRE — derived from stacked AutoSyringeRings.
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "AUTO-FIRE %.1f / sec", st.autoRingRate);
+        text.draw(W, H, lx, y, buf, 2.0f, labelColor);
+        y += 34.0f;
+    }
+
+    // ORBITALS — number of stacked OrbitalRings.
+    {
+        char buf[64];
+        std::snprintf(buf, sizeof(buf), "ORBITALS  %d", st.orbitalCount);
+        text.draw(W, H, lx, y, buf, 2.0f, labelColor);
     }
 
     // ------------------------------------------------------------------ //
@@ -134,11 +150,30 @@ void StatsScreen::draw(render::Hud& hud, render::Text& text,
 
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
+            const int slotIdx = row * cols + col;
             const float sx = gridX + col * (slotSize + slotGap);
             const float sy = ry    + row * (slotSize + slotGap);
+
+            const bool occupied = slotIdx < static_cast<int>(st.items.size());
+            const glm::vec3 fill   = occupied
+                ? rarityColor(st.items[slotIdx].rarity) * 0.35f
+                : slotColor;
+            const glm::vec3 border = occupied
+                ? rarityColor(st.items[slotIdx].rarity)
+                : slotBorder;
             hud.drawProgress(W, H, glm::vec2(sx, sy),
                              glm::vec2(slotSize, slotSize),
-                             0.0f, slotColor, slotColor, slotBorder, 2.0f, 0.90f);
+                             1.0f, fill, fill, border, 2.0f, 0.90f);
+
+            if (occupied) {
+                const std::string nm = itemName(st.items[slotIdx].id);
+                const float nScale = 1.0f;
+                const float nW = render::Text::measure(nm) * nScale;
+                text.draw(W, H, sx + (slotSize - nW) * 0.5f,
+                          sy + slotSize * 0.5f - 4.0f,
+                          nm, nScale,
+                          glm::vec4(rarityColor(st.items[slotIdx].rarity), 1.0f));
+            }
         }
     }
 

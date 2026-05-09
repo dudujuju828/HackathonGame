@@ -1,7 +1,10 @@
 #include "core/Input.h"
 #include "core/Time.h"
 #include "core/Window.h"
+#include "game/Chest.h"
 #include "game/Enemy.h"
+#include "game/Item.h"
+#include "game/Rng.h"
 #include "game/Terrain.h"
 #include "game/EnemySpawner.h"
 #include "game/LevelUpMenu.h"
@@ -14,9 +17,11 @@
 #include "game/Weapon.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
+#include "render/Glow.h"
 #include "render/Hud.h"
 #include "render/Mesh.h"
 #include "render/Model.h"
+#include "render/Particles.h"
 #include "render/PostFx.h"
 #include "render/Shader.h"
 #include "render/Text.h"
@@ -32,6 +37,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <random>
 #include <vector>
 
 namespace {
@@ -127,6 +133,15 @@ const render::AnimationClip* runAnim = nullptr;
             runAnim = &enemyModel.animations()[0];
         }
 
+        render::Model chestModel;
+        if (!chestModel.loadFromFile("assets/models/treasure_chest.glb")) {
+            std::fprintf(stderr, "[main] failed to load chest model\n");
+        }
+        const render::AnimationClip* chestOpenAnim = nullptr;
+        if (!chestModel.animations().empty()) {
+            chestOpenAnim = &chestModel.animations()[0];
+        }
+
         game::Weapon weapon;
         weapon.setModel(&syringeModel);
         weapon.unlimited = true;
@@ -146,6 +161,24 @@ const render::AnimationClip* runAnim = nullptr;
         spawner.intervalSec = 4.0f;
         spawner.spawnRadius = 14.0f;
 
+        std::vector<game::Chest> chests;
+        chests.reserve(16);
+        float ringCooldown = 0.0f;
+
+        std::vector<game::ItemInstance> pendingLoot;
+        bool prevLootClick = false;
+
+        // Orbital syringes: state for OrbitalRing item. cooldowns_[i] gates how
+        // often syringe i can damage. Resized lazily as the player gains rings.
+        constexpr float kOrbitRadius      = 1.6f;   // metres around the player
+        constexpr float kOrbitSpeedRad    = 2.5f;   // rad/s
+        constexpr float kOrbitYOffset     = 1.0f;   // above player feet
+        constexpr float kOrbitalScale     = 0.05f;  // syringe model scale
+        constexpr float kOrbitalHitRadius = 0.45f;  // collision sphere
+        constexpr float kOrbitalCooldown  = 0.4f;   // seconds before a single syringe can hit again
+        float orbitalAngle = 0.0f;
+        std::vector<float> orbitalCooldowns;
+
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
 
@@ -162,6 +195,17 @@ const render::AnimationClip* runAnim = nullptr;
         render::Text text;
         if (!text.init("assets/shaders/text.vert",
                        "assets/shaders/text.frag")) {
+            return 1;
+        }
+
+        render::Glow glow;
+        if (!glow.init("assets/shaders/glow_disc.vert",
+                       "assets/shaders/glow_disc.frag")) {
+            return 1;
+        }
+        render::Particles particles;
+        if (!particles.init("assets/shaders/particle.vert",
+                            "assets/shaders/particle.frag")) {
             return 1;
         }
 
@@ -284,6 +328,7 @@ const render::AnimationClip* runAnim = nullptr;
                     player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
                     projectiles.clear();
                     enemies.clear();
+                    chests.clear();
                 }
             }
 
@@ -367,6 +412,103 @@ const render::AnimationClip* runAnim = nullptr;
                 }
             }
 
+            // Auto-fire ring: cooldown driven by stacked ring count. Every
+            // (1 / N) seconds, spawn a syringe aimed at the nearest live enemy.
+            {
+                const float ringRate = player.autoRingRate();
+                if (ringRate > 0.0f) {
+                    ringCooldown -= dt;
+                    if (ringCooldown <= 0.0f) {
+                        // Find nearest enemy on XZ within reasonable range.
+                        const float kAutoRange = 25.0f;
+                        game::Enemy* target = nullptr;
+                        float bestD2 = kAutoRange * kAutoRange;
+                        for (auto& e : enemies) {
+                            if (!e.alive()) continue;
+                            glm::vec3 d = e.hitCentre() - cam.position;
+                            float d2 = d.x * d.x + d.y * d.y + d.z * d.z;
+                            if (d2 < bestD2) { bestD2 = d2; target = &e; }
+                        }
+                        if (target) {
+                            // Spawn near the held-syringe tip but pushed further
+                            // down so a behind-the-camera target doesn't cause
+                            // the shot to fly past the player's face on the way out.
+                            glm::vec3 baseFwd   = cam.forward();
+                            glm::vec3 baseRight = glm::normalize(glm::cross(baseFwd, glm::vec3(0,1,0)));
+                            glm::vec3 up        = glm::cross(baseRight, baseFwd);
+                            glm::vec3 spawn = cam.position
+                                            + baseFwd  * 0.45f
+                                            + baseRight * 0.18f
+                                            - up        * 0.45f;
+                            glm::vec3 dir = glm::normalize(target->hitCentre() - spawn);
+
+                            game::Projectile pj;
+                            pj.position = spawn;
+                            pj.velocity = dir * projectileSpeed;
+                            pj.scale    = projectileScale;
+                            pj.maxAge   = 3.0f;
+                            projectiles.push_back(pj);
+                            ringCooldown = 1.0f / ringRate;
+                        } else {
+                            // No target — re-check soon rather than burning a full second.
+                            ringCooldown = 0.25f;
+                        }
+                    }
+                } else {
+                    ringCooldown = 0.0f;
+                }
+            }
+
+            // Orbital syringes: deterministic positions around the player based
+            // on stacked OrbitalRings. Each syringe carries its own damage
+            // cooldown so a single stationary enemy can't be infinite-ticked.
+            {
+                const int orbitalCount = player.countItem(game::ItemId::OrbitalRing);
+                if (static_cast<int>(orbitalCooldowns.size()) != orbitalCount) {
+                    orbitalCooldowns.assign(orbitalCount, 0.0f);
+                }
+                if (orbitalCount > 0) {
+                    orbitalAngle += kOrbitSpeedRad * dt;
+                    if (orbitalAngle > 6.28318530718f) orbitalAngle -= 6.28318530718f;
+
+                    const glm::vec3 centre = player.position()
+                                           + glm::vec3(0.0f, kOrbitYOffset, 0.0f);
+                    const float step = 6.28318530718f / static_cast<float>(orbitalCount);
+                    for (int i = 0; i < orbitalCount; ++i) {
+                        if (orbitalCooldowns[i] > 0.0f) orbitalCooldowns[i] -= dt;
+                        const float a = orbitalAngle + step * static_cast<float>(i);
+                        const glm::vec3 pos = centre + glm::vec3(std::cos(a) * kOrbitRadius,
+                                                                 0.0f,
+                                                                 std::sin(a) * kOrbitRadius);
+                        if (orbitalCooldowns[i] > 0.0f) continue;
+                        for (auto& e : enemies) {
+                            if (!e.alive()) continue;
+                            if (glm::distance(pos, e.hitCentre()) <
+                                game::kEnemyRadius + kOrbitalHitRadius) {
+                                e.hp -= 1;
+                                orbitalCooldowns[i] = kOrbitalCooldown;
+                                if (!e.alive()) {
+                                    player.addXp(game::kEnemyXpReward);
+                                    if (game::rand01() < game::kChestDropChance) {
+                                        game::Chest c;
+                                        c.position   = e.position;
+                                        c.yawRad     = game::rand01() * 6.28318530718f;
+                                        c.rolled     = game::rollChestRarity();
+                                        c.itemId     = game::rollChestItem();
+                                        c.state      = game::ChestState::Opening;
+                                        c.openTimer  = 0.0f;
+                                        c.cyclePhase = 1.0f;
+                                        c.animator.setAnimation(chestOpenAnim, /*loop=*/false);
+                                        chests.push_back(c);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Projectile <-> enemy hit detection. Sphere-vs-point. First alive
             // enemy within radius takes the hit and ends the projectile.
             for (auto& p : projectiles) {
@@ -378,8 +520,72 @@ const render::AnimationClip* runAnim = nullptr;
                         p.age = p.maxAge;          // mark projectile for cull
                         if (!e.alive()) {
                             player.addXp(game::kEnemyXpReward);
+                            // Roll for chest drop.
+                            if (game::rand01() < game::kChestDropChance) {
+                                game::Chest c;
+                                c.position   = e.position;
+                                c.yawRad     = game::rand01() * 6.28318530718f;
+                                c.rolled     = game::rollChestRarity();
+                                c.itemId     = game::rollChestItem();
+                                c.state      = game::ChestState::Opening;
+                                c.openTimer  = 0.0f;
+                                c.cyclePhase = 1.0f;  // forces a tint pick on the first tick
+                                c.animator.setAnimation(chestOpenAnim, /*loop=*/false);
+                                chests.push_back(c);
+                            }
                         }
                         break;
+                    }
+                }
+            }
+
+            // Advance opening chests; flicker the tint and trigger the loot
+            // popup when the cycle finishes. Item is granted on click, not here.
+            for (auto& c : chests) {
+                if (c.state == game::ChestState::Opening) {
+                    c.openTimer += dt;
+                    c.animator.update(dt);
+                    if (chestModel.skeleton()) {
+                        c.animator.calculateBoneTransforms(&chestModel.skeleton().value());
+                    }
+                    // Random colour swap rate eases from 12 Hz → 3 Hz.
+                    const float u = std::clamp(c.openTimer / game::kChestOpenDuration,
+                                               0.0f, 1.0f);
+                    const float rate = glm::mix(12.0f, 3.0f, u);
+                    c.cyclePhase += rate * dt;
+                    while (c.cyclePhase >= 1.0f) {
+                        c.cyclePhase -= 1.0f;
+                        std::uniform_int_distribution<int> pick(0, game::kRarityCount - 1);
+                        c.cycleTint = game::rarityColor(
+                            static_cast<game::Rarity>(pick(game::rng())));
+                    }
+                    if (c.openTimer >= game::kChestOpenDuration) {
+                        c.state     = game::ChestState::Fading;
+                        c.fadeTimer = 0.0f;
+                        c.cycleTint = game::rarityColor(c.rolled);
+                        pendingLoot.push_back({ c.itemId, c.rolled });
+                    }
+
+                    // Emit upward-rising particles in the chest's current colour.
+                    const float emitInterval = 1.0f / 45.0f;
+                    c.emitTimer += dt;
+                    while (c.emitTimer >= emitInterval) {
+                        c.emitTimer -= emitInterval;
+                        const float angle = game::rand01() * 6.28318530718f;
+                        const float r     = game::rand01() * 0.18f;
+                        const float gh    = terrain.heightAt(c.position.x, c.position.z);
+                        render::Particle pp;
+                        pp.position = glm::vec3(c.position.x + std::cos(angle) * r,
+                                                gh + 0.05f,
+                                                c.position.z + std::sin(angle) * r);
+                        pp.velocity = glm::vec3((game::rand01() - 0.5f) * 0.6f,
+                                                1.4f + game::rand01() * 0.9f,
+                                                (game::rand01() - 0.5f) * 0.6f);
+                        pp.color    = glm::vec4(c.currentTint(), 1.0f);
+                        pp.life     = 0.9f;
+                        pp.age      = 0.0f;
+                        pp.size     = 22.0f;
+                        particles.emit(pp);
                     }
                 }
             }
@@ -397,6 +603,54 @@ const render::AnimationClip* runAnim = nullptr;
                 projectiles.end());
             }  // end Playing-scene gate
 
+            // Particle simulation runs regardless of scene so existing puffs
+            // continue to drift while the loot popup is up.
+            particles.update(dt);
+
+            // Chest fade ticks regardless of scene so the visual completes
+            // while the loot popup is up. Keep the animator alive too so the
+            // skinned pose holds at the final open frame.
+            for (auto& c : chests) {
+                if (c.state == game::ChestState::Fading) {
+                    c.fadeTimer += dt;
+                    c.animator.update(dt);
+                    if (chestModel.skeleton()) {
+                        c.animator.calculateBoneTransforms(&chestModel.skeleton().value());
+                    }
+                    if (c.fadeTimer >= game::kChestFadeDuration) {
+                        c.state = game::ChestState::Done;
+                    }
+                }
+            }
+            chests.erase(
+                std::remove_if(chests.begin(), chests.end(),
+                    [](const game::Chest& c){ return c.state == game::ChestState::Done; }),
+                chests.end());
+
+            // Hand off to the loot popup as soon as a chest finishes opening.
+            if (!pendingLoot.empty() && scene == game::Scene::Playing) {
+                scene = game::Scene::Loot;
+                glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                input.resetMouseDelta();
+                prevLootClick = input.mouseButton(GLFW_MOUSE_BUTTON_LEFT);
+            }
+
+            // Loot scene: click anywhere to claim the front item and continue.
+            if (scene == game::Scene::Loot) {
+                const bool curClick = input.mouseButton(GLFW_MOUSE_BUTTON_LEFT);
+                const bool justClicked = curClick && !prevLootClick;
+                prevLootClick = curClick;
+                if (justClicked && !pendingLoot.empty()) {
+                    player.grantItem(pendingLoot.front());
+                    pendingLoot.erase(pendingLoot.begin());
+                    if (pendingLoot.empty()) {
+                        scene = game::Scene::Playing;
+                        glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                        input.resetMouseDelta();
+                    }
+                }
+            }
+
             // Keep the scene FBO matched to the window size.
             sceneFbo.resize(window.width(), window.height());
             sceneFbo.bind();
@@ -406,6 +660,7 @@ const render::AnimationClip* runAnim = nullptr;
             checker.bind(0);
             worldShader.setInt  ("uAlbedo", 0);
             worldShader.setInt  ("uHasBones", 0);
+            worldShader.setFloat("uAlpha",   1.0f);
             worldShader.setMat4 ("uViewProj", cam.proj(window.aspect()) * cam.view());
             worldShader.setVec3 ("uCamPos", cam.position);
             worldShader.setVec3 ("uCamDir", cam.forward());
@@ -465,6 +720,75 @@ const render::AnimationClip* runAnim = nullptr;
                 worldShader.setInt("uHasBones", 0);
             }
 
+            // Chests on the ground.
+            if (!chests.empty()) {
+                bool chestHasBones = chestModel.skeleton().has_value();
+                GLboolean blendWas = glIsEnabled(GL_BLEND);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+                for (const auto& c : chests) {
+                    glm::mat4 M(1.0f);
+                    float gh = terrain.heightAt(c.position.x, c.position.z);
+                    M = glm::translate(M, glm::vec3(c.position.x,
+                                                    gh + game::kChestYOffset,
+                                                    c.position.z));
+                    M = glm::rotate(M, c.yawRad, glm::vec3(0.0f, 1.0f, 0.0f));
+                    M = glm::rotate(M, glm::radians(game::kChestBasePitchDeg),
+                                    glm::vec3(1.0f, 0.0f, 0.0f));
+                    M = glm::scale(M, glm::vec3(game::kChestScale));
+                    worldShader.setMat4 ("uModel", M);
+                    worldShader.setVec3 ("uTint",  c.currentTint());
+                    worldShader.setFloat("uAlpha", c.currentAlpha());
+
+                    const bool useBones = chestHasBones &&
+                                          c.state != game::ChestState::Closed;
+                    worldShader.setInt("uHasBones", useBones ? 1 : 0);
+                    if (useBones) {
+                        const auto& matrices = c.animator.finalBoneMatrices();
+                        for (size_t i = 0; i < matrices.size() && i < 100; ++i) {
+                            char buf[32];
+                            std::snprintf(buf, sizeof(buf), "uBones[%zu]", i);
+                            worldShader.setMat4(buf, matrices[i]);
+                        }
+                    }
+
+                    for (const auto& sub : chestModel.meshes()) {
+                        if (sub.diffuse) sub.diffuse->bind(0);
+                        sub.mesh.draw();
+                    }
+                }
+                worldShader.setInt  ("uHasBones", 0);
+                worldShader.setVec3 ("uTint",     glm::vec3(1.0f));
+                worldShader.setFloat("uAlpha",    1.0f);
+                if (!blendWas) glDisable(GL_BLEND);
+                checker.bind(0);
+
+                // Additive ground discs under each active chest.
+                const glm::mat4 vp = cam.proj(window.aspect()) * cam.view();
+                for (const auto& c : chests) {
+                    if (c.state == game::ChestState::Closed) continue;
+                    const float gh = terrain.heightAt(c.position.x, c.position.z);
+                    const glm::vec3 centre(c.position.x, gh + 0.02f, c.position.z);
+                    const float intensity = (c.state == game::ChestState::Fading)
+                        ? 1.4f * c.currentAlpha()
+                        : 1.4f;
+                    glow.draw(vp, centre, /*radius=*/2.5f,
+                              c.currentTint(), intensity);
+                }
+                // World shader was active before — re-bind for any subsequent draws.
+                worldShader.use();
+            }
+
+            // Particles render after chests so they sit on top of the glow disc.
+            // Drawn unconditionally so puffs outlive their parent chest.
+            {
+                const glm::mat4 vp = cam.proj(window.aspect()) * cam.view();
+                particles.draw(vp, window.height());
+                worldShader.use();
+                checker.bind(0);
+            }
+
             // In-flight projectiles (depth-tested against the world).
             if (!projectiles.empty()) {
                 GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
@@ -496,6 +820,44 @@ const render::AnimationClip* runAnim = nullptr;
                     }
                 }
                 if (cullWas) glEnable(GL_CULL_FACE);
+            }
+
+            // Orbital syringes: drawn at deterministic positions around the
+            // player. Same syringe model as the in-flight projectiles.
+            {
+                const int orbitalCount = player.countItem(game::ItemId::OrbitalRing);
+                if (orbitalCount > 0) {
+                    GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
+                    glDisable(GL_CULL_FACE);
+                    const glm::vec3 centre = player.position()
+                                           + glm::vec3(0.0f, kOrbitYOffset, 0.0f);
+                    const float step = 6.28318530718f / static_cast<float>(orbitalCount);
+                    for (int i = 0; i < orbitalCount; ++i) {
+                        const float a = orbitalAngle + step * static_cast<float>(i);
+                        const glm::vec3 pos = centre + glm::vec3(std::cos(a) * kOrbitRadius,
+                                                                 0.0f,
+                                                                 std::sin(a) * kOrbitRadius);
+                        // Point the syringe tip radially outward from the player.
+                        const glm::vec3 fwd(std::cos(a), 0.0f, std::sin(a));
+                        const glm::vec3 up(0.0f, 1.0f, 0.0f);
+                        const glm::vec3 right = glm::normalize(glm::cross(fwd, up));
+                        const glm::vec3 vup   = glm::cross(right, fwd);
+
+                        glm::mat4 M(1.0f);
+                        M[0] = glm::vec4(right, 0.0f);
+                        M[1] = glm::vec4(vup,   0.0f);
+                        M[2] = glm::vec4(-fwd,  0.0f);
+                        M[3] = glm::vec4(pos,   1.0f);
+                        M = glm::scale(M, glm::vec3(kOrbitalScale));
+
+                        worldShader.setMat4("uModel", M);
+                        for (const auto& sub : syringeModel.meshes()) {
+                            if (sub.diffuse) sub.diffuse->bind(0);
+                            sub.mesh.draw();
+                        }
+                    }
+                    if (cullWas) glEnable(GL_CULL_FACE);
+                }
             }
 
             // Held viewmodel: clear depth so the syringe never clips into walls.
@@ -565,15 +927,70 @@ const render::AnimationClip* runAnim = nullptr;
                 settingsMenu.draw(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::LevelUp) {
                 levelUpMenu.draw(hud, text, window.width(), window.height());
+            } else if (scene == game::Scene::Loot) {
+                if (!pendingLoot.empty()) {
+                    const auto& item = pendingLoot.front();
+                    const int W = window.width();
+                    const int H = window.height();
+
+                    const float panelW = 460.0f;
+                    const float panelH = 200.0f;
+                    const float panelX = W * 0.5f - panelW * 0.5f;
+                    const float panelY = H * 0.5f - panelH * 0.5f;
+
+                    const glm::vec3 rcol  = game::rarityColor(item.rarity);
+                    const glm::vec3 panel { 0.05f, 0.04f, 0.04f };
+
+                    hud.drawRect(W, H, glm::vec2(0, 0),
+                                 glm::vec2(static_cast<float>(W), static_cast<float>(H)),
+                                 glm::vec3(0.0f), 0.55f);
+                    hud.drawProgress(W, H, glm::vec2(panelX, panelY),
+                                     glm::vec2(panelW, panelH),
+                                     1.0f, panel, panel, rcol, 2.5f, 0.96f);
+
+                    {
+                        const std::string title = "YOU OBTAINED";
+                        const float sc = 1.8f;
+                        const float w  = render::Text::measure(title) * sc;
+                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
+                                  panelY + 28.0f, title, sc,
+                                  glm::vec4(0.85f, 0.80f, 0.78f, 1.0f));
+                    }
+                    {
+                        const std::string rar = game::rarityName(item.rarity);
+                        const float sc = 1.6f;
+                        const float w  = render::Text::measure(rar) * sc;
+                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
+                                  panelY + 60.0f, rar, sc, glm::vec4(rcol, 1.0f));
+                    }
+                    {
+                        const std::string nm = game::itemName(item.id);
+                        const float sc = 3.5f;
+                        const float w  = render::Text::measure(nm) * sc;
+                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
+                                  panelY + 92.0f, nm, sc, glm::vec4(rcol, 1.0f));
+                    }
+                    {
+                        const std::string hint = "[CLICK TO CONTINUE]";
+                        const float sc = 1.4f;
+                        const float w  = render::Text::measure(hint) * sc;
+                        text.draw(W, H, panelX + (panelW - w) * 0.5f,
+                                  panelY + panelH - 32.0f, hint, sc,
+                                  glm::vec4(0.65f, 0.55f, 0.55f, 1.0f));
+                    }
+                }
             } else if (scene == game::Scene::Inventory) {
                 game::PlayerStats ps;
-                ps.health      = player.health;
-                ps.maxHealth   = player.maxHealth;
-                ps.damage      = player.damage;
-                ps.attackSpeed = player.attackSpeed;
-                ps.stamina     = player.stamina;
-                ps.maxStamina  = player.maxStamina;
-                ps.level       = player.level();
+                ps.health       = player.health;
+                ps.maxHealth    = player.maxHealth;
+                ps.damage       = player.damage;
+                ps.attackSpeed  = player.attackSpeed;
+                ps.stamina      = player.stamina;
+                ps.maxStamina   = player.maxStamina;
+                ps.level        = player.level();
+                ps.autoRingRate = player.autoRingRate();
+                ps.orbitalCount = player.countItem(game::ItemId::OrbitalRing);
+                ps.items        = player.inventory();
                 statsScreen.draw(hud, text, window.width(), window.height(), ps);
             }
 

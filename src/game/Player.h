@@ -1,8 +1,11 @@
 #pragma once
 
+#include "Item.h"
 #include "render/Camera.h"
 
 #include <glm/glm.hpp>
+
+#include <vector>
 
 namespace core { class Input; }
 
@@ -62,6 +65,14 @@ public:
     int  pendingLevelUps() const { return pendingLevelUps_; }
     void consumeLevelUp()        { if (pendingLevelUps_ > 0) pendingLevelUps_--; }
 
+    // Items are passive and permanent — no remove. Duplicates stack: e.g.
+    // two AutoSyringeRings means 2 shots/sec instead of 1.
+    void grantItem(const ItemInstance& item) { inventory_.push_back(item); }
+    const std::vector<ItemInstance>& inventory() const { return inventory_; }
+    int  countItem(ItemId id) const;
+    // Per-second auto-fire rate from all stacked AutoSyringeRings.
+    float autoRingRate() const;
+
     render::Camera&       camera()       { return camera_; }
     const render::Camera& camera() const { return camera_; }
 
@@ -91,6 +102,8 @@ private:
     int xp_        = 0;
     int xpToNext_  = 100;
     int pendingLevelUps_ = 0;
+
+    std::vector<ItemInstance> inventory_;
 
     WalkFeel       feel_   {};
     render::Camera camera_ {};

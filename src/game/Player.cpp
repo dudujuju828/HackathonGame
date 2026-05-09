@@ -50,6 +50,17 @@ void Player::setProgress(int level, int xp) {
     xpToNext_  = 100 * level_;
 }
 
+int Player::countItem(ItemId id) const {
+    int n = 0;
+    for (const auto& it : inventory_) if (it.id == id) ++n;
+    return n;
+}
+
+float Player::autoRingRate() const {
+    // Each ring contributes 1 shot/sec; rarity is cosmetic for now.
+    return static_cast<float>(countItem(ItemId::AutoSyringeRing));
+}
+
 void Player::update(float dt, const core::Input& input, float t, float groundHeight) {
     // Mouse look (advances yaw/pitch on the camera).
     camera_.addLook(input.mouseDX(), input.mouseDY());
