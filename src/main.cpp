@@ -784,6 +784,13 @@ int main() {
                 // the box is always reachable.
                 const int curWave = waveManager.currentWaveIndex();
                 if (!waveManager.finished() && curWave != antidoteSpawnedForWave) {
+                    // Reward player with a 20% max-health heal when a wave
+                    // advances. Skipped on the very first wave (-1 -> 0)
+                    // since nothing has been completed yet.
+                    if (antidoteSpawnedForWave >= 0 && curWave > antidoteSpawnedForWave) {
+                        player.health = std::min(player.maxHealth,
+                                                 player.health + 0.20f * player.maxHealth);
+                    }
                     antidoteSpawnedForWave = curWave;
                     journalScreen.unlock();
                     antidoteBoxes.clear();
