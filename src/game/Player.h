@@ -38,6 +38,11 @@ struct WalkFeel {
     float traumaDecay         = 1.5f;  // per second
     float traumaShakeYawMax   = 1.5f;  // degrees at trauma=1
     float traumaShakePitchMax = 1.0f;  // degrees at trauma=1
+
+    // Knockback impulse on damage. Applied as XZ velocity additive to input
+    // movement; decays exponentially so the player can fight back to control.
+    float knockbackStrength = 6.0f;  // m/s peak push speed
+    float knockbackDecay    = 8.0f;  // 1/s exponential falloff (~0.12s half-life)
 };
 
 class Player {
@@ -55,6 +60,11 @@ public:
     // Add to the trauma accumulator (clamped 0..1). Squared in-shader for
     // a perceptual decay curve.
     void addTrauma(float amount);
+
+    // Push the player along the XZ component of `dir` (need not be
+    // normalized; vertical component is ignored). Replaces any existing
+    // knockback so each fresh hit is felt distinctly.
+    void applyKnockback(const glm::vec3& dir);
 
     glm::vec3 position() const { return position_; }
     glm::vec3 velocity() const { return velocity_; }
@@ -96,8 +106,9 @@ public:
     float maxStamina  = 20.0f;
 
 private:
-    glm::vec3 position_ { 0.0f, 0.0f, 3.0f };  // feet
-    glm::vec3 velocity_ { 0.0f };
+    glm::vec3 position_     { 0.0f, 0.0f, 3.0f };  // feet
+    glm::vec3 velocity_     { 0.0f };
+    glm::vec3 knockbackVel_ { 0.0f };  // XZ-only impulse from being hit
 
     float bobPhase_          = 0.0f;
     float bobIntensity_      = 0.0f;  // 0..1, smoothed

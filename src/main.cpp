@@ -910,6 +910,7 @@ int main() {
                 if (xzDist < e.def->attackRange) {
                     player.health = std::max(0.0f, player.health - e.def->damage);
                     player.addTrauma(0.35f);
+                    player.applyKnockback(player.position() - e.position);
                     e.attackCooldown = e.def->attackInterval;
                 }
             }

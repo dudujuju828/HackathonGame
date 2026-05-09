@@ -26,6 +26,7 @@ void Player::clampXZ(float minX, float maxX, float minZ, float maxZ) {
 void Player::setSpawn(const glm::vec3& feet) {
     position_        = feet;
     velocity_        = glm::vec3(0.0f);
+    knockbackVel_    = glm::vec3(0.0f);
     bobPhase_        = 0.0f;
     bobIntensity_    = 0.0f;
     trauma_          = 0.0f;
@@ -54,6 +55,13 @@ void Player::restart() {
 
 void Player::addTrauma(float a) {
     trauma_ = std::clamp(trauma_ + a, 0.0f, 1.0f);
+}
+
+void Player::applyKnockback(const glm::vec3& dir) {
+    glm::vec3 d(dir.x, 0.0f, dir.z);
+    const float len = std::sqrt(d.x * d.x + d.z * d.z);
+    if (len < 1e-4f) return;
+    knockbackVel_ = (d / len) * feel_.knockbackStrength;
 }
 
 void Player::addXp(int amount) {
@@ -131,7 +139,8 @@ void Player::update(float dt, const core::Input& input, float t, float groundHei
 
     velocity_.x = wish.x * horizSpeed;
     velocity_.z = wish.z * horizSpeed;
-    position_ += velocity_ * dt;
+    position_ += (velocity_ + knockbackVel_) * dt;
+    knockbackVel_ *= std::exp(-feel_.knockbackDecay * dt);
 
     // Clamp feet to terrain surface.
     if (position_.y <= groundHeight) {
