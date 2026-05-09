@@ -695,6 +695,7 @@ int main() {
             } else if (scene == game::Scene::Journal) {
                 journalScreen.update(input, window.width(), window.height());
             }
+            journalScreen.tickToast(dt);
 
             // Apply fullscreen toggle each frame (cheap if already in state).
             window.setFullscreen(settingsMenu.settings().fullscreen);
@@ -784,6 +785,7 @@ int main() {
                 const int curWave = waveManager.currentWaveIndex();
                 if (!waveManager.finished() && curWave != antidoteSpawnedForWave) {
                     antidoteSpawnedForWave = curWave;
+                    journalScreen.unlock();
                     antidoteBoxes.clear();
                     // Inset accounts for the box's draw scale so the visual
                     // never sticks through the wall geometry.
@@ -1425,6 +1427,7 @@ int main() {
                     orbitalAngle = 0.0f;
                     ringCooldown = 0.0f;
                     waveManager.reset();
+                    journalScreen.resetProgress();
                     scene = game::Scene::Playing;
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     input.resetMouseDelta();
@@ -1452,6 +1455,7 @@ int main() {
                     orbitalAngle = 0.0f;
                     ringCooldown = 0.0f;
                     waveManager.reset();
+                    journalScreen.resetProgress();
                     scene = game::Scene::Playing;
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     input.resetMouseDelta();
@@ -2079,6 +2083,7 @@ int main() {
                                   glm::vec4(0.35f, 1.0f, 0.5f, pulse * urgency));
                     }
                 }
+                journalScreen.drawToast(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::Settings) {
                 settingsMenu.draw(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::LevelUp) {

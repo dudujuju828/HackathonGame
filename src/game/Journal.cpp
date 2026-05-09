@@ -102,10 +102,27 @@ bool JournalScreen::load(const std::string& csvPath) {
 }
 
 void JournalScreen::open() {
-    page_      = 0;
+    page_      = std::max(0, std::min(page_, unlockedCount_ - 1));
     prevLeft_  = false;
     prevRight_ = false;
     prevClick_ = false;
+}
+
+void JournalScreen::unlock() {
+    if (unlockedCount_ >= static_cast<int>(entries_.size())) return;
+    toastDisease_ = entries_[unlockedCount_].disease;
+    ++unlockedCount_;
+    toastTimer_ = 4.0f;
+}
+
+void JournalScreen::tickToast(float dt) {
+    if (toastTimer_ > 0.0f) toastTimer_ -= dt;
+}
+
+void JournalScreen::resetProgress() {
+    unlockedCount_ = 0;
+    toastTimer_    = 0.0f;
+    page_          = 0;
 }
 
 std::vector<std::string> JournalScreen::wrapText(const std::string& s,
@@ -133,7 +150,7 @@ void JournalScreen::update(const core::Input& input, int W, int H) {
     const bool curRight = input.key(GLFW_KEY_RIGHT);
     if (curLeft  && !prevLeft_  && page_ > 0)
         --page_;
-    if (curRight && !prevRight_ && page_ < (int)entries_.size() - 1)
+    if (curRight && !prevRight_ && page_ < unlockedCount_ - 1)
         ++page_;
     prevLeft_  = curLeft;
     prevRight_ = curRight;
@@ -154,7 +171,7 @@ void JournalScreen::update(const core::Input& input, int W, int H) {
         };
         if (hit(lBtnX, navY, kArrowBtnW, kArrowBtnH) && page_ > 0)
             --page_;
-        if (hit(rBtnX, navY, kArrowBtnW, kArrowBtnH) && page_ < (int)entries_.size() - 1)
+        if (hit(rBtnX, navY, kArrowBtnW, kArrowBtnH) && page_ < unlockedCount_ - 1)
             ++page_;
     }
     prevClick_ = curClick;
@@ -176,6 +193,26 @@ void JournalScreen::draw(render::Hud& hud, render::Text& text, int W, int H) con
     const glm::vec4 bodyColor  { 0.90f, 0.88f, 0.96f, 1.0f };
     const glm::vec4 hintColor  { 0.52f, 0.44f, 0.68f, 1.0f };
     const glm::vec4 btnTxt     { 1.00f, 1.00f, 1.00f, 1.0f };
+
+    if (unlockedCount_ == 0) {
+        hud.drawRect(W, H, glm::vec2(0.0f, 0.0f),
+                     glm::vec2(static_cast<float>(W), static_cast<float>(H)),
+                     bgColor, 0.75f);
+        const float panelX = W * 0.5f - kPanelW * 0.5f;
+        const float panelY = H * 0.5f - kPanelH * 0.5f;
+        hud.drawProgress(W, H, glm::vec2(panelX, panelY),
+                         glm::vec2(kPanelW, kPanelH),
+                         1.0f, panelColor, panelColor, panelBorder, 2.0f, 0.95f);
+        const std::string msg = "NO ENTRIES UNLOCKED YET";
+        const float mw = render::Text::measure(msg) * kLabelScale;
+        text.draw(W, H, W * 0.5f - mw * 0.5f, H * 0.5f - 12.0f * kLabelScale * 0.5f,
+                  msg, kLabelScale, hintColor);
+        const std::string hint = "[J] TO CLOSE";
+        const float hw = render::Text::measure(hint) * kHintScale;
+        text.draw(W, H, W * 0.5f - hw * 0.5f,
+                  panelY + kPanelH - 20.0f, hint, kHintScale, hintColor);
+        return;
+    }
 
     // Dark overlay.
     hud.drawRect(W, H, glm::vec2(0.0f, 0.0f),
@@ -248,7 +285,7 @@ void JournalScreen::draw(render::Hud& hud, render::Text& text, int W, int H) con
     // Page indicator centred between arrows.
     {
         char buf[32];
-        std::snprintf(buf, sizeof(buf), "PAGE %d / %d", page_ + 1, (int)entries_.size());
+        std::snprintf(buf, sizeof(buf), "PAGE %d / %d", page_ + 1, unlockedCount_);
         const float pw = render::Text::measure(buf) * kHintScale;
         text.draw(W, H, W * 0.5f - pw * 0.5f,
                   navY + (kArrowBtnH - 12.0f * kHintScale) * 0.5f,
@@ -262,6 +299,49 @@ void JournalScreen::draw(render::Hud& hud, render::Text& text, int W, int H) con
         text.draw(W, H, W * 0.5f - hw * 0.5f,
                   panelY + kPanelH - 20.0f, hint, kHintScale, hintColor);
     }
+}
+
+void JournalScreen::drawToast(render::Hud& hud, render::Text& text, int W, int H) const {
+    if (toastTimer_ <= 0.0f || toastDisease_.empty()) return;
+
+    constexpr float kToastW      = 340.0f;
+    constexpr float kToastH      = 72.0f;
+    constexpr float kToastMargin = 20.0f;
+    constexpr float kFadeSec     = 1.0f;
+
+    const float alpha = toastTimer_ < kFadeSec
+                        ? toastTimer_ / kFadeSec
+                        : 1.0f;
+
+    const float tx = static_cast<float>(W) - kToastW - kToastMargin;
+    const float ty = static_cast<float>(H) * 0.25f;
+
+    const glm::vec3 fill  { 0.04f, 0.02f, 0.10f };
+    const glm::vec3 border{ 0.50f, 0.28f, 0.85f };
+    hud.drawProgress(W, H, glm::vec2(tx, ty), glm::vec2(kToastW, kToastH),
+                     1.0f, fill, fill, border, 1.5f, alpha * 0.93f);
+
+    const glm::vec4 accentCol{ 0.78f, 0.65f, 1.00f, alpha };
+    const glm::vec4 nameCol  { 1.00f, 0.95f, 1.00f, alpha };
+    const glm::vec4 hintCol  { 0.52f, 0.44f, 0.68f, alpha };
+
+    constexpr float kAccentScale = 1.5f;
+    constexpr float kNameScale   = 2.0f;
+    constexpr float kHintS       = 1.4f;
+
+    const std::string header = "NEW JOURNAL ENTRY";
+    const float hw = render::Text::measure(header) * kAccentScale;
+    text.draw(W, H, tx + (kToastW - hw) * 0.5f, ty + 8.0f,
+              header, kAccentScale, accentCol);
+
+    const float nw = render::Text::measure(toastDisease_) * kNameScale;
+    text.draw(W, H, tx + (kToastW - nw) * 0.5f, ty + 8.0f + 12.0f * kAccentScale + 4.0f,
+              toastDisease_, kNameScale, nameCol);
+
+    const std::string hint = "Press J to view";
+    const float hiw = render::Text::measure(hint) * kHintS;
+    text.draw(W, H, tx + (kToastW - hiw) * 0.5f, ty + kToastH - 12.0f * kHintS - 6.0f,
+              hint, kHintS, hintCol);
 }
 
 } // namespace game
