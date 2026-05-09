@@ -6,23 +6,31 @@
 
 namespace render {
 
-void Animator::setAnimation(const AnimationClip* clip) {
+void Animator::setAnimation(const AnimationClip* clip, bool loop) {
     currentClip_ = clip;
     currentTime_ = 0.0f;
+    loop_        = loop;
 }
 
 void Animator::update(float dt) {
-    if (currentClip_) {
-        currentTime_ += dt;
-        if (currentClip_->duration > 0.0f) {
-            currentTime_ = std::fmod(currentTime_, currentClip_->duration);
-        }
+    if (!currentClip_ || currentClip_->duration <= 0.0f) return;
+    currentTime_ += dt;
+    if (loop_) {
+        currentTime_ = std::fmod(currentTime_, currentClip_->duration);
+    } else if (currentTime_ > currentClip_->duration) {
+        currentTime_ = currentClip_->duration;  // clamp; pose holds at end
     }
 }
+
+// All three interpolators share the same shape: handle end/empty/single-key
+// edge cases up front, then walk the keyframes to bracket `time`. The end-hold
+// guard is critical — without it, time>=last keyframe falls through the
+// search loop and we snap back to interpolating between keyframe 0 and 1.
 
 glm::vec3 Animator::interpolateTranslation(float time, const AnimationChannel& channel) {
     if (channel.translations.empty()) return glm::vec3(0.0f);
     if (channel.translations.size() == 1) return channel.translations[0].value;
+    if (time >= channel.translations.back().time) return channel.translations.back().value;
 
     int p0 = 0;
     for (int i = 0; i < static_cast<int>(channel.translations.size()) - 1; ++i) {
@@ -43,6 +51,7 @@ glm::vec3 Animator::interpolateTranslation(float time, const AnimationChannel& c
 glm::quat Animator::interpolateRotation(float time, const AnimationChannel& channel) {
     if (channel.rotations.empty()) return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     if (channel.rotations.size() == 1) return channel.rotations[0].value;
+    if (time >= channel.rotations.back().time) return channel.rotations.back().value;
 
     int p0 = 0;
     for (int i = 0; i < static_cast<int>(channel.rotations.size()) - 1; ++i) {
@@ -63,6 +72,7 @@ glm::quat Animator::interpolateRotation(float time, const AnimationChannel& chan
 glm::vec3 Animator::interpolateScale(float time, const AnimationChannel& channel) {
     if (channel.scales.empty()) return glm::vec3(1.0f);
     if (channel.scales.size() == 1) return channel.scales[0].value;
+    if (time >= channel.scales.back().time) return channel.scales.back().value;
 
     int p0 = 0;
     for (int i = 0; i < static_cast<int>(channel.scales.size()) - 1; ++i) {
