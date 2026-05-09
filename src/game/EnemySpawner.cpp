@@ -9,9 +9,19 @@ float EnemySpawner::rand01_() {
     return static_cast<float>(rngState_ >> 8) / static_cast<float>(1u << 24);
 }
 
+void EnemySpawner::setDefs(const EnemyDef* defs, int count) {
+    defs_     = defs;
+    defCount_ = count;
+}
+
 void EnemySpawner::spawnAt(std::vector<Enemy>& enemies, const glm::vec3& at) {
     Enemy e;
     e.position = glm::vec3(at.x, 0.0f, at.z);
+    if (defs_ && defCount_ > 0) {
+        int idx = static_cast<int>(rand01_() * static_cast<float>(defCount_)) % defCount_;
+        e.def = &defs_[idx];
+        e.animator.setAnimation(e.def->walkAnim);
+    }
     enemies.push_back(e);
 }
 
@@ -28,4 +38,4 @@ void EnemySpawner::update(float dt, std::vector<Enemy>& enemies,
     }
 }
 
-}  // namespace game
+} // namespace game

@@ -117,15 +117,41 @@ int main() {
             std::fprintf(stderr, "[main] failed to load syringe model\n");
         }
 
-        render::Model enemyModel;
-        if (!enemyModel.loadFromFile("assets/models/Harpy.glb")) {
-            std::fprintf(stderr, "[main] failed to load enemy model\n");
-        }
-        if(enemyModel.skeleton()){printf("Harpy has skeleton with %zu joints\n", enemyModel.skeleton()->joints.size());}else{printf("Harpy has NO skeleton!\n");}
-const render::AnimationClip* runAnim = nullptr;
-        if (!enemyModel.animations().empty()) {
-            runAnim = &enemyModel.animations()[0];
-        }
+        // Enemy models — one per type, loaded once and shared across all instances.
+        render::Model harpyModel, bulldogModel, catModel, pigModel, chickenModel;
+        auto loadEnemy = [](render::Model& m, const char* path) {
+            if (!m.loadFromFile(path))
+                std::fprintf(stderr, "[main] failed to load %s\n", path);
+        };
+        loadEnemy(harpyModel,   "assets/models/Harpy.glb");
+        loadEnemy(bulldogModel, "assets/models/Bulldog.glb");
+        loadEnemy(catModel,     "assets/models/Cat.glb");
+        loadEnemy(pigModel,     "assets/models/Pig.glb");
+        loadEnemy(chickenModel, "assets/models/Chicken.glb");
+
+        // Find a named animation clip; returns nullptr if the model has none or name not found.
+        auto findAnim = [](const render::Model& m, const char* name) -> const render::AnimationClip* {
+            for (const auto& clip : m.animations())
+                if (clip.name == name) return &clip;
+            return m.animations().empty() ? nullptr : &m.animations()[0];
+        };
+
+        // Per-type tuning. Animations used:
+        //   Harpy   -> "simple flyght"  (flight cycle)
+        //   Bulldog -> "Sitting"        (only clip available in the GLB)
+        //   Cat     -> none             (GLB has no animation data)
+        //   Pig     -> "ArmatureAction" (only clip available in the GLB)
+        //   Chicken -> none             (GLB has no animation data)
+        // scale = uniform GLB scale at draw time
+        // height = world Y to lift model so feet touch floor; also the hit-sphere centre
+        // radius = collision sphere radius (world units)
+        const game::EnemyDef enemyDefs[] = {
+            { &harpyModel,   findAnim(harpyModel,   "simple flyght"),  0.30f, 1.70f, 0.60f },
+            { &bulldogModel, findAnim(bulldogModel, "Sitting"),         1.50f, 0.70f, 0.60f },
+            { &catModel,     nullptr,                                   1.50f, 0.50f, 0.50f },
+            { &pigModel,     findAnim(pigModel,     "ArmatureAction"),  1.50f, 0.70f, 0.60f },
+            { &chickenModel, nullptr,                                   1.00f, 0.55f, 0.40f },
+        };
 
         game::Weapon weapon;
         weapon.setModel(&syringeModel);
@@ -143,8 +169,9 @@ const render::AnimationClip* runAnim = nullptr;
         std::vector<game::Enemy> enemies;
         enemies.reserve(32);
         game::EnemySpawner spawner;
-        spawner.intervalSec = 4.0f;
-        spawner.spawnRadius = 14.0f;
+        spawner.intervalSec = 2.0f;
+        spawner.spawnRadius = 8.0f;
+        spawner.setDefs(enemyDefs, static_cast<int>(std::size(enemyDefs)));
 
         render::Framebuffer sceneFbo;
         sceneFbo.resize(window.width(), window.height());
@@ -351,18 +378,14 @@ const render::AnimationClip* runAnim = nullptr;
                 p.age      += dt;
             }
             // Spawn + advance enemies (also gated by Playing scene).
-            size_t oldSize = enemies.size();
             spawner.update(dt, enemies, player.position());
-            for (size_t i = oldSize; i < enemies.size(); ++i) {
-                enemies[i].animator.setAnimation(runAnim);
-            }
 
             for (auto& e : enemies) {
-                if (e.alive()) {
+                if (e.alive() && e.def) {
                     e.update(dt, player.position());
                     e.animator.update(dt);
-                    if (enemyModel.skeleton()) {
-                        e.animator.calculateBoneTransforms(&enemyModel.skeleton().value());
+                    if (e.def->model->skeleton()) {
+                        e.animator.calculateBoneTransforms(&e.def->model->skeleton().value());
                     }
                 }
             }
@@ -373,7 +396,8 @@ const render::AnimationClip* runAnim = nullptr;
                 if (!p.alive()) continue;
                 for (auto& e : enemies) {
                     if (!e.alive()) continue;
-                    if (glm::distance(p.position, e.hitCentre()) < game::kEnemyRadius) {
+                    float hitRadius = e.def ? e.def->radius : game::kEnemyRadius;
+                    if (glm::distance(p.position, e.hitCentre()) < hitRadius) {
                         e.hp -= 1;
                         p.age = p.maxAge;          // mark projectile for cull
                         if (!e.alive()) {
@@ -427,28 +451,32 @@ const render::AnimationClip* runAnim = nullptr;
             terrain.mesh().draw();
             checker.bind(0); // restore for subsequent geometry
 
-            // Enemies: animated Harpy models.
+            // Enemies: track the active def to avoid redundant shader state changes
+            // when consecutive enemies share a type.
             if (!enemies.empty()) {
                 worldShader.setVec3("uTint", glm::vec3(1.0f));
-                bool hasBones = enemyModel.skeleton().has_value();
-                worldShader.setInt("uHasBones", hasBones ? 1 : 0);
+                const game::EnemyDef* activeDef = nullptr;
 
                 for (const auto& e : enemies) {
+                    if (!e.def) continue;
+
+                    if (e.def != activeDef) {
+                        activeDef = e.def;
+                        worldShader.setInt("uHasBones",
+                            activeDef->model->skeleton().has_value() ? 1 : 0);
+                    }
+
                     glm::mat4 M(1.0f);
-                    // The Harpy model origin is centered. Lift it so its feet touch the floor.
-                    M = glm::translate(M, e.position + glm::vec3(0.0f, game::kEnemyHeight, 0.0f));
-                    
-                    // Rotate to face velocity
+                    M = glm::translate(M, e.position + glm::vec3(0.0f, activeDef->height, 0.0f));
                     if (glm::length(e.velocity) > 1e-4f) {
                         glm::vec3 fwd = glm::normalize(e.velocity);
                         float angle = std::atan2(fwd.x, fwd.z);
                         M = glm::rotate(M, angle, glm::vec3(0.0f, 1.0f, 0.0f));
                     }
-                    
-                    M = glm::scale(M, glm::vec3(game::kEnemyScale));
+                    M = glm::scale(M, glm::vec3(activeDef->scale));
                     worldShader.setMat4("uModel", M);
 
-                    if (hasBones) {
+                    if (activeDef->model->skeleton()) {
                         const auto& matrices = e.animator.finalBoneMatrices();
                         for (size_t i = 0; i < matrices.size() && i < 100; ++i) {
                             char buf[32];
@@ -457,7 +485,7 @@ const render::AnimationClip* runAnim = nullptr;
                         }
                     }
 
-                    for (const auto& sub : enemyModel.meshes()) {
+                    for (const auto& sub : activeDef->model->meshes()) {
                         if (sub.diffuse) sub.diffuse->bind(0);
                         sub.mesh.draw();
                     }
