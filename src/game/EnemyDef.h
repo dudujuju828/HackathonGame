@@ -22,6 +22,7 @@ struct EnemyDef {
     float baseYawDeg    = 0.0f;   // fix-up heading rotation around Y, applied after basePitch (use to make the head face forward)
     float baseRollDeg   = 0.0f;   // side-lean around the model's final forward axis (post chase-yaw)
     int   maxHp         = 2;      // hp this enemy spawns with
+    float dropChance    = 0.10f;  // 0..1 — probability this enemy drops a chest on death
 };
 
 } // namespace game

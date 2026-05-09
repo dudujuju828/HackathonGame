@@ -8,26 +8,37 @@
 
 namespace game {
 
-struct MapDef {
-    float offX, offZ;         // noise-domain origin (large = different region)
-    float amplitude;          // max height deviation in metres
-    float f1, w1;             // octave 1: base frequency scale, weight
-    float f2, w2;             // octave 2
-    float f3, w3;             // octave 3
+// Per-quadrant biome noise character. The four corners of the map blend
+// smoothly into each other via bilinear weights, so the player walks
+// through one continuous terrain whose feel changes with location:
+//
+//   NW (Default):   rolling hills     — moderate amplitude, balanced octaves
+//   NE (Asylum):    dramatic ridges   — high amplitude, low-freq dominant
+//   SW (Forest):    dense rolling     — high amplitude, mid-freq prominent
+//   SE (Graveyard): flat-ish + bumps  — low amplitude, surface detail dominant
+struct BiomeDef {
+    float offX, offZ;
+    float amplitude;
+    float f1, w1;
+    float f2, w2;
+    float f3, w3;
 };
 
-// Each map has its own noise character, not just a coordinate shift.
-//
-// Hollow Creek: gentle countryside — moderate hills, balanced octaves.
-// Ashwood:      dramatic highlands — tall sweeping ridges, minimal fine detail.
-// The Mire:     flat swamp — very low amplitude, bumpy surface texture dominates.
-static constexpr MapDef kMapDefs[] = {
-    {   0.0f,   0.0f,  2.5f,  0.012f, 0.60f,  0.042f, 0.30f,  0.110f, 0.10f },
-    {  50.0f,  75.0f,  5.5f,  0.007f, 0.75f,  0.028f, 0.18f,  0.090f, 0.07f },
-    { 120.0f,  30.0f,  1.0f,  0.005f, 0.20f,  0.060f, 0.45f,  0.180f, 0.35f },
+static constexpr BiomeDef kBiomes[4] = {
+    // SW — Forest: dense rolling hills
+    {  10.0f,  10.0f, 14.0f,  0.008f, 0.75f,  0.030f, 0.20f,  0.100f, 0.05f },
+    // SE — Graveyard: gentle undulating with surface texture
+    { 120.0f,  30.0f,  6.0f,  0.006f, 0.55f,  0.025f, 0.30f,  0.090f, 0.15f },
+    // NW — Default: classic rolling hills
+    {  60.0f, 200.0f, 12.0f,  0.009f, 0.65f,  0.032f, 0.25f,  0.100f, 0.10f },
+    // NE — Asylum: dramatic highlands and ridges
+    {  50.0f,  75.0f, 22.0f,  0.005f, 0.82f,  0.020f, 0.14f,  0.080f, 0.04f },
 };
-static constexpr int kMapDefCount =
-    static_cast<int>(sizeof(kMapDefs) / sizeof(kMapDefs[0]));
+
+static float smoothstepF(float t) {
+    t = std::clamp(t, 0.0f, 1.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
 
 // Four quadrants of the 128x128 map.
 const ZoneInfo Terrain::kZones[4] = {
@@ -102,21 +113,39 @@ float Terrain::perlin(float x, float y) {
         v);
 }
 
-void Terrain::generate(int mapIndex) {
-    const MapDef& m = kMapDefs[(mapIndex >= 0 && mapIndex < kMapDefCount) ? mapIndex : 0];
-
+void Terrain::generate(int /*mapIndex*/) {
+    // Single unified terrain. Each vertex samples all four biome param sets
+    // and blends them with bilinear weights based on world position, so the
+    // four corners blend smoothly into one continuous landscape.
     const float step = kWorldSize / static_cast<float>(kGrid - 1);
+    const float half = kWorldSize * 0.5f;
 
     for (int i = 0; i < kGrid; ++i) {
         for (int j = 0; j < kGrid; ++j) {
-            float wx = -kWorldSize * 0.5f + static_cast<float>(i) * step;
-            float wz = -kWorldSize * 0.5f + static_cast<float>(j) * step;
+            const float wx = -half + static_cast<float>(i) * step;
+            const float wz = -half + static_cast<float>(j) * step;
 
-            float h = m.w1 * perlin(wx * m.f1 + m.offX, wz * m.f1 + m.offZ)
-                    + m.w2 * perlin(wx * m.f2 + m.offX, wz * m.f2 + m.offZ)
-                    + m.w3 * perlin(wx * m.f3 + m.offX, wz * m.f3 + m.offZ);
+            // Bilinear weights across the world (0..1 east-west and south-north).
+            const float u = smoothstepF((wx + half) / kWorldSize);
+            const float v = smoothstepF((wz + half) / kWorldSize);
 
-            heights_[i][j] = h * m.amplitude;
+            const float w_sw = (1.0f - u) * (1.0f - v);  // index 0 — Forest
+            const float w_se =         u  * (1.0f - v);  // index 1 — Graveyard
+            const float w_nw = (1.0f - u) *         v;   // index 2 — Default
+            const float w_ne =         u  *         v;   // index 3 — Asylum
+
+            float h = 0.0f;
+            const float weights[4] = { w_sw, w_se, w_nw, w_ne };
+            for (int b = 0; b < 4; ++b) {
+                if (weights[b] < 1e-4f) continue;
+                const BiomeDef& m = kBiomes[b];
+                const float bh = m.amplitude * (
+                    m.w1 * perlin(wx * m.f1 + m.offX, wz * m.f1 + m.offZ) +
+                    m.w2 * perlin(wx * m.f2 + m.offX, wz * m.f2 + m.offZ) +
+                    m.w3 * perlin(wx * m.f3 + m.offX, wz * m.f3 + m.offZ));
+                h += weights[b] * bh;
+            }
+            heights_[i][j] = h;
         }
     }
 

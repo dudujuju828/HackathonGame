@@ -8,21 +8,74 @@
 # - The wave ends after duration_sec (any unspawned groups skip).
 # - Enemy names are case-insensitive: Harpy, Bulldog, Cat, Pig, Chicken.
 # - Comments (#) and blank lines are ignored.
+#
+# Design notes (game-designer pass):
+#  - Wave 1-2: tutorial pacing, just Cat and Chicken (low HP). Player learns
+#    movement, manual fire, and the rhythm of the auto-ring if they get one.
+#  - Wave 3 introduces Harpy. Wave 5 introduces Bulldog (the first real tank).
+#    Wave 7 introduces Pig (medium tank, slow drop pacing).
+#  - Each wave has 3-5 groups with breathing room between them so the
+#    player can collect chests without being immediately swarmed.
+#  - Final wave (10) is climactic: every type, sustained pressure, no breather.
 
-WAVE "First Encounter" 30
-GROUP  0   Chicken 2 Harpy 1
-GROUP  8   Bulldog 1 Chicken 2
-GROUP 18   Harpy 2 Cat 1
+WAVE "First Contact" 25
+GROUP  0   Cat 2
+GROUP  9   Chicken 2
+GROUP 18   Cat 3
 
-WAVE "Stampede" 40
-GROUP  0   Harpy 3
-GROUP  6   Bulldog 1 Chicken 3
-GROUP 14   Cat 3 Pig 1
-GROUP 24   Harpy 2 Bulldog 2 Chicken 2
+WAVE "Murmur" 30
+GROUP  0   Chicken 3
+GROUP 10   Cat 4
+GROUP 22   Cat 2 Chicken 2
 
-WAVE "Outbreak" 50
-GROUP  0   Cat 4 Chicken 4
-GROUP  8   Bulldog 2 Pig 2
-GROUP 18   Harpy 4 Cat 3
-GROUP 30   Bulldog 3 Pig 3 Chicken 3
-GROUP 40   Harpy 5
+WAVE "Wings" 35
+GROUP  0   Harpy 1
+GROUP  8   Cat 3 Chicken 1
+GROUP 18   Harpy 2
+GROUP 28   Chicken 4 Cat 2
+
+WAVE "Pestilence" 40
+GROUP  0   Cat 5 Chicken 3
+GROUP 12   Harpy 3
+GROUP 24   Cat 4 Chicken 4
+GROUP 34   Harpy 2 Cat 3
+
+WAVE "Snarl" 45
+GROUP  0   Bulldog 1
+GROUP  8   Chicken 4
+GROUP 20   Cat 5 Harpy 2
+GROUP 33   Bulldog 2 Chicken 3
+
+WAVE "Pack" 50
+GROUP  0   Bulldog 2 Cat 4
+GROUP 14   Chicken 5 Harpy 2
+GROUP 28   Bulldog 3
+GROUP 42   Cat 5 Chicken 4 Harpy 2
+
+WAVE "Glutton" 50
+GROUP  0   Pig 2
+GROUP 12   Bulldog 1 Cat 4
+GROUP 24   Pig 2 Chicken 4
+GROUP 38   Harpy 3 Pig 2
+
+WAVE "Outbreak" 55
+GROUP  0   Cat 6 Chicken 5
+GROUP 14   Pig 3 Harpy 2
+GROUP 26   Bulldog 3 Cat 4
+GROUP 40   Pig 2 Chicken 5
+GROUP 50   Bulldog 2 Pig 1
+
+WAVE "Convulsion" 60
+GROUP  0   Bulldog 3 Pig 2
+GROUP 14   Cat 6 Chicken 6 Harpy 3
+GROUP 30   Bulldog 2 Pig 3
+GROUP 44   Cat 5 Chicken 5 Harpy 4
+GROUP 56   Bulldog 4
+
+WAVE "Final Hour" 75
+GROUP  0   Bulldog 3 Pig 3 Harpy 3
+GROUP 14   Cat 8 Chicken 8
+GROUP 28   Bulldog 4 Pig 4
+GROUP 42   Harpy 5 Cat 6 Chicken 6
+GROUP 56   Bulldog 5 Pig 5 Harpy 4
+GROUP 70   Cat 10 Chicken 10

@@ -7,8 +7,8 @@ namespace game {
 // ranges so they don't need to live in the data model.
 struct Settings {
     float hFovDeg       = 116.0f;  // horizontal FOV (deg)
-    float flashlightDeg = 45.0f;   // flashlight outer-cone half-angle (deg)
-    bool  fullscreen    = true;
+    float flashlightDeg = 65.0f;   // flashlight outer-cone half-angle (deg)
+    bool  fullscreen    = false;
     int   mapIndex      = 0;
 
     static constexpr int kMapCount = 3;

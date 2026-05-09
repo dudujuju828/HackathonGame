@@ -155,7 +155,7 @@ std::vector<uint8_t> makeChecker(int size, uint8_t r1, uint8_t g1, uint8_t b1,
 
 int main() {
     try {
-        core::Window window(1280, 720, "HackathonGame");
+        core::Window window(1600, 900, "HackathonGame");
         core::Input  input;
         core::Time   time;
         input.attach(window.handle());
@@ -220,13 +220,13 @@ int main() {
         // Pig     -> "ArmatureAction"       only clip in GLB
         // Chicken -> no skeleton/clips      procedural bob + forward lean in render matrix
         //
-        // name (for waves.txt lookup),  model, walkAnim, scale, height, radius, bobFreq, bobAmp, basePitchDeg, baseYawDeg, baseRollDeg, maxHp
+        // name (for waves.txt lookup),  model, walkAnim, scale, height, radius, bobFreq, bobAmp, basePitchDeg, baseYawDeg, baseRollDeg, maxHp, dropChance
         const game::EnemyDef enemyDefs[] = {
-            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 0.60f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   3 },
-            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 0.60f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   5 },
-            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 0.40f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   1 },
-            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 0.50f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   4 },
-            { "Chicken", &chickenModel, nullptr,                                2.50f, 0.80f, 0.50f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   2 },
+            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   3,  0.20f },
+            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   5,  0.50f },
+            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 0.85f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   1,  0.05f },
+            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   4,  0.30f },
+            { "Chicken", &chickenModel, nullptr,                                2.50f, 0.80f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   2,  0.10f },
         };
 
         render::Model chestModel;
@@ -323,7 +323,6 @@ int main() {
         game::Scene scene = game::Scene::Playing;
         bool prevEscape   = false;
         bool prevB        = false;
-        int  prevMapIndex = settingsMenu.settings().mapIndex;
 
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
@@ -427,20 +426,6 @@ int main() {
                 }
             }
 
-            // Detect map switch from the settings menu and regenerate terrain.
-            {
-                const int newMap = settingsMenu.settings().mapIndex;
-                if (newMap != prevMapIndex) {
-                    prevMapIndex = newMap;
-                    terrain.generate(newMap);
-                    player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
-                    projectiles.clear();
-                    enemies.clear();
-                    chests.clear();
-                    waveManager.reset();
-                }
-            }
-
             // Apply fullscreen toggle each frame (cheap if already in state).
             window.setFullscreen(settingsMenu.settings().fullscreen);
 
@@ -501,17 +486,17 @@ int main() {
             // Spawn + advance enemies (also gated by Playing scene).
             // WaveManager owns scheduling now; falls back to the legacy spawner
             // tick only if no waves were loaded.
-            const size_t enemiesBeforeSpawn = enemies.size();
             if (waveManager.totalWaves() > 0) {
                 waveManager.update(dt, enemies, player.position());
             } else {
                 spawner.update(dt, enemies, player.position());
             }
-            // Snap freshly-spawned enemies to terrain height once. After this
-            // their Y stays put — pathfinding is XZ only, so they don't bob.
-            for (size_t i = enemiesBeforeSpawn; i < enemies.size(); ++i) {
-                enemies[i].position.y = terrain.heightAt(enemies[i].position.x,
-                                                          enemies[i].position.z);
+            // Pathfinding is XZ only (handled in Enemy::update). Y is forced
+            // to the terrain height under each enemy every frame so the model
+            // tracks the surface and never clips into hills.
+            for (auto& e : enemies) {
+                if (e.alive())
+                    e.position.y = terrain.heightAt(e.position.x, e.position.z);
             }
 
             for (auto& e : enemies) {
@@ -601,7 +586,8 @@ int main() {
                                 orbitalCooldowns[i] = kOrbitalCooldown;
                                 if (!e.alive()) {
                                     player.addXp(game::kEnemyXpReward);
-                                    if (game::rand01() < game::kChestDropChance) {
+                                    const float drop = e.def ? e.def->dropChance : game::kChestDropChance;
+                                    if (game::rand01() < drop) {
                                         game::Chest c;
                                         c.position   = e.position;
                                         c.yawRad     = game::rand01() * 6.28318530718f;
@@ -633,8 +619,9 @@ int main() {
                         p.age = p.maxAge;          // mark projectile for cull
                         if (!e.alive()) {
                             player.addXp(game::kEnemyXpReward);
-                            // Roll for chest drop.
-                            if (game::rand01() < game::kChestDropChance) {
+                            // Roll for chest drop — per-enemy chance from EnemyDef.
+                            const float drop = e.def ? e.def->dropChance : game::kChestDropChance;
+                            if (game::rand01() < drop) {
                                 game::Chest c;
                                 c.position   = e.position;
                                 c.yawRad     = game::rand01() * 6.28318530718f;
@@ -786,7 +773,7 @@ int main() {
                 worldShader.setFloat("uFlashOuter",
                                      glm::cos(glm::radians(outerDeg)));
             }
-            worldShader.setVec3 ("uFlashColor", glm::vec3(1.2f, 1.15f, 1.0f));
+            worldShader.setVec3 ("uFlashColor", glm::vec3(2.2f, 2.1f, 1.85f));
             worldShader.setVec3 ("uTint", glm::vec3(1.0f));  // default for world geometry
 
             // Terrain mesh (replaces the old flat floor + cube grid).

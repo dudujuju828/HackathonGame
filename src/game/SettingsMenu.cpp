@@ -40,28 +40,20 @@ void SettingsMenu::buildItems_(std::vector<Item>& out) {
     Item s2{};
     s2.kind = Item::Kind::Slider; s2.label = "FLASHLIGHT";
     s2.sliderValue = &settings_.flashlightDeg;
-    s2.sliderMin = 10.0f; s2.sliderMax = 45.0f;
+    s2.sliderMin = 10.0f; s2.sliderMax = 80.0f;
     s2.yOffsetPx = 180.0f;
     out.push_back(s2);
-
-    Item c{};
-    c.kind = Item::Kind::Cycle; c.label = "MAP";
-    c.cycleValue = &settings_.mapIndex;
-    c.cycleCount = Settings::kMapCount;
-    c.cycleNames = Settings::kMapNames;
-    c.yOffsetPx = 250.0f;
-    out.push_back(c);
 
     Item t{};
     t.kind = Item::Kind::Toggle; t.label = "FULLSCREEN";
     t.toggleValue = &settings_.fullscreen;
-    t.yOffsetPx = 320.0f;
+    t.yOffsetPx = 260.0f;
     out.push_back(t);
 
     Item b{};
     b.kind = Item::Kind::Button; b.label = "EXIT GAME";
     b.action = MenuAction::ExitGame;
-    b.yOffsetPx = 390.0f;
+    b.yOffsetPx = 330.0f;
     out.push_back(b);
 }
 
