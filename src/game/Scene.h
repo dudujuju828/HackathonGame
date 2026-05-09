@@ -3,6 +3,7 @@
 namespace game {
 
 enum class Scene {
+    StartMenu,  // initial briefing screen before gameplay begins
     Playing,
     Settings,
     LevelUp,

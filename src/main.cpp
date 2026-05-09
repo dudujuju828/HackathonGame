@@ -14,6 +14,7 @@
 #include "game/Scene.h"
 #include "game/SettingsMenu.h"
 #include "game/Journal.h"
+#include "game/StartMenu.h"
 #include "game/StatsScreen.h"
 #include "game/Upgrade.h"
 #include "game/Wave.h"
@@ -374,12 +375,14 @@ int main() {
             return 1;
         }
 
+        game::StartMenu     startMenu;
+        startMenu.load("data/player_brief.txt");
         game::SettingsMenu  settingsMenu;
         game::LevelUpMenu   levelUpMenu;
         game::StatsScreen   statsScreen;
         game::JournalScreen journalScreen;
         journalScreen.load("data/Journal.csv");
-        game::Scene scene = game::Scene::Playing;
+        game::Scene scene = game::Scene::StartMenu;
         bool prevEscape   = false;
         bool prevB        = false;
         bool prevJ        = false;
@@ -407,8 +410,9 @@ int main() {
             }
 
             // Escape edge-toggles the settings overlay; it no longer quits.
+            // Disabled on the start menu so Escape can't skip the briefing.
             const bool curEscape = input.key(GLFW_KEY_ESCAPE);
-            if (curEscape && !prevEscape) {
+            if (curEscape && !prevEscape && scene != game::Scene::StartMenu) {
                 scene = (scene == game::Scene::Playing)
                           ? game::Scene::Settings
                           : game::Scene::Playing;
@@ -462,7 +466,13 @@ int main() {
                 player.camera().fovDeg = glm::degrees(vFovRad);
             }
 
-            if (scene == game::Scene::Playing) {
+            if (scene == game::Scene::StartMenu) {
+                if (startMenu.update(input, window.width(), window.height())) {
+                    scene = game::Scene::Playing;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    input.resetMouseDelta();
+                }
+            } else if (scene == game::Scene::Playing) {
                 // Trigger level-up menu if pending.
                 if (player.pendingLevelUps() > 0) {
                     scene = game::Scene::LevelUp;
@@ -1737,6 +1747,8 @@ int main() {
                 statsScreen.draw(hud, text, window.width(), window.height(), ps);
             } else if (scene == game::Scene::Journal) {
                 journalScreen.draw(hud, text, window.width(), window.height());
+            } else if (scene == game::Scene::StartMenu) {
+                startMenu.draw(hud, text, window.width(), window.height());
             }
 
             // Loot toasts — top-left achievement style. Slide in, hold, fade.

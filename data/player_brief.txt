@@ -1,0 +1,10 @@
+YOUR ROLE:           Veterinary Specialist
+DEPLOYMENT ZONE:     Contamination Area Alpha-7
+STATUS:              Immediate Dispatch
+
+MISSION BRIEFING:
+You are being deployed to containment Zone Alpha-7, where an unknown viral pathogen has infected the local wildlife population. Your veterinary background makes you uniquely qualified for this operation. Ten critical antidote caches are scattered across the zone. Your mission is simple: locate and secure all containers for extraction.
+
+WARNING: All wildlife in the zone is now considered hostile. The infection has mutated host behavior. Expect heightened aggression, unpredictable movement patterns, and coordinated group attacks.
+
+Good luck out there. Command will monitor your signal. Stay sharp.
