@@ -42,6 +42,70 @@
 
 namespace {
 
+// Procedural walk AnimationClip for Bulldog (38-joint skeleton).
+// Joint indices come from the Bulldog.glb skeleton dump:
+//   0  _rootJoint     (root)
+//   2  spine01_02     (mid-spine)
+//  14  frontLeg01.L / 19 frontLeg01.R
+//  24  hindLeg01.L  / 31 hindLeg01.R
+render::AnimationClip buildDogWalk(const render::Skeleton& skel) {
+    render::AnimationClip clip;
+    clip.name     = "ProceduralWalk";
+    clip.duration = 0.7f;  // one full stride ~1.4 strides/s
+
+    constexpr float kPi = 3.14159265358979f;
+    const float     T   = clip.duration;
+
+    // Swing a joint ±amplitude around its local X axis (forward/backward for leg bones).
+    // phaseOffset = pi flips the leg to opposite position → diagonal gait.
+    auto addSwing = [&](int jointIdx, float amplitude, float phaseOffset) {
+        if (jointIdx >= static_cast<int>(skel.joints.size())) return;
+        render::AnimationChannel ch;
+        ch.targetJoint = jointIdx;
+        const glm::quat rest = skel.joints[jointIdx].rotation;
+        for (int k = 0; k <= 8; ++k) {
+            float t     = T * (static_cast<float>(k) / 8.0f);
+            float angle = amplitude * std::sin(phaseOffset + (2.0f * kPi / T) * t);
+            ch.rotations.push_back({ t, rest * glm::angleAxis(angle, glm::vec3(1.0f, 0.0f, 0.0f)) });
+        }
+        clip.channels.push_back(std::move(ch));
+    };
+
+    // Diagonal gait: front-L & hind-R swing together; front-R & hind-L swing together.
+    addSwing(14, glm::radians(30.0f), 0.0f);   // frontLeg01.L
+    addSwing(19, glm::radians(30.0f), kPi);    // frontLeg01.R
+    addSwing(24, glm::radians(35.0f), kPi);    // hindLeg01.L  (anti-phase with front-L)
+    addSwing(31, glm::radians(35.0f), 0.0f);   // hindLeg01.R  (in-phase with front-L)
+
+    // Spine lateral sway at 2x stride frequency.
+    {
+        render::AnimationChannel ch;
+        ch.targetJoint = 2;  // spine01_02
+        const glm::quat rest = skel.joints[2].rotation;
+        for (int k = 0; k <= 8; ++k) {
+            float t   = T * (static_cast<float>(k) / 8.0f);
+            float ang = glm::radians(3.0f) * std::sin((4.0f * kPi / T) * t);
+            ch.rotations.push_back({ t, rest * glm::angleAxis(ang, glm::vec3(0.0f, 0.0f, 1.0f)) });
+        }
+        clip.channels.push_back(std::move(ch));
+    }
+
+    // Root vertical bounce at 2x stride frequency (rises on each footfall).
+    {
+        render::AnimationChannel ch;
+        ch.targetJoint = 0;  // _rootJoint
+        const glm::vec3 restT = skel.joints[0].translation;
+        for (int k = 0; k <= 8; ++k) {
+            float t = T * (static_cast<float>(k) / 8.0f);
+            float y = 0.025f * std::abs(std::sin((2.0f * kPi / T) * t));
+            ch.translations.push_back({ t, restT + glm::vec3(0.0f, y, 0.0f) });
+        }
+        clip.channels.push_back(std::move(ch));
+    }
+
+    return clip;
+}
+
 void buildCube(std::vector<render::Vertex>& verts, std::vector<uint32_t>& idx) {
     struct Face { glm::vec3 n; glm::vec3 a, b, c, d; };
     const Face faces[6] = {
@@ -123,15 +187,45 @@ int main() {
             std::fprintf(stderr, "[main] failed to load syringe model\n");
         }
 
-        render::Model enemyModel;
-        if (!enemyModel.loadFromFile("assets/models/Harpy.glb")) {
-            std::fprintf(stderr, "[main] failed to load enemy model\n");
-        }
-        if(enemyModel.skeleton()){printf("Harpy has skeleton with %zu joints\n", enemyModel.skeleton()->joints.size());}else{printf("Harpy has NO skeleton!\n");}
-const render::AnimationClip* runAnim = nullptr;
-        if (!enemyModel.animations().empty()) {
-            runAnim = &enemyModel.animations()[0];
-        }
+        // Enemy models — one per type, loaded once and shared across all instances.
+        render::Model harpyModel, bulldogModel, catModel, pigModel, chickenModel;
+        auto loadEnemy = [](render::Model& m, const char* path) {
+            if (!m.loadFromFile(path))
+                std::fprintf(stderr, "[main] failed to load %s\n", path);
+        };
+        loadEnemy(harpyModel,   "assets/models/Harpy.glb");
+        loadEnemy(bulldogModel, "assets/models/Bulldog.glb");
+        loadEnemy(catModel,     "assets/models/Cat.glb");
+        loadEnemy(pigModel,     "assets/models/Pig.glb");
+        loadEnemy(chickenModel, "assets/models/Chicken.glb");
+
+        // Build the procedural walk clip for Bulldog now that the skeleton is loaded.
+        render::AnimationClip bulldogWalkClip;
+        if (bulldogModel.skeleton())
+            bulldogWalkClip = buildDogWalk(bulldogModel.skeleton().value());
+
+        // Find a named animation clip; returns nullptr if the model has none or name not found.
+        auto findAnim = [](const render::Model& m, const char* name) -> const render::AnimationClip* {
+            for (const auto& clip : m.animations())
+                if (clip.name == name) return &clip;
+            return m.animations().empty() ? nullptr : &m.animations()[0];
+        };
+
+        // Per-type tuning.
+        // Harpy   -> "simple flyght"       real skeletal flight anim
+        // Bulldog -> bulldogWalkClip        procedural skeletal walk (4-leg diagonal gait)
+        // Cat     -> no clips in GLB        procedural Y-bob walk substitute
+        // Pig     -> "ArmatureAction"       only clip in GLB
+        // Chicken -> no skeleton/clips      procedural bob + forward lean in render matrix
+        //
+        //              model          walkAnim             scale   height  radius  bobFreq  bobAmp  basePitchDeg  baseYawDeg  baseRollDeg  maxHp
+        const game::EnemyDef enemyDefs[] = {
+            { &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 0.60f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   3 },
+            { &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 0.60f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   5 },
+            { &catModel,     nullptr,                                0.45f, 0.25f, 0.40f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   1 },
+            { &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 0.50f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   4 },
+            { &chickenModel, nullptr,                                2.50f, 0.80f, 0.50f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   2 },
+        };
 
         render::Model chestModel;
         if (!chestModel.loadFromFile("assets/models/treasure_chest.glb")) {
@@ -158,8 +252,9 @@ const render::AnimationClip* runAnim = nullptr;
         std::vector<game::Enemy> enemies;
         enemies.reserve(32);
         game::EnemySpawner spawner;
-        spawner.intervalSec = 4.0f;
-        spawner.spawnRadius = 14.0f;
+        spawner.intervalSec = 2.0f;
+        spawner.spawnRadius = 8.0f;
+        spawner.setDefs(enemyDefs, static_cast<int>(std::size(enemyDefs)));
 
         std::vector<game::Chest> chests;
         chests.reserve(16);
@@ -396,18 +491,14 @@ const render::AnimationClip* runAnim = nullptr;
                 p.age      += dt;
             }
             // Spawn + advance enemies (also gated by Playing scene).
-            size_t oldSize = enemies.size();
             spawner.update(dt, enemies, player.position());
-            for (size_t i = oldSize; i < enemies.size(); ++i) {
-                enemies[i].animator.setAnimation(runAnim);
-            }
 
             for (auto& e : enemies) {
-                if (e.alive()) {
+                if (e.alive() && e.def) {
                     e.update(dt, player.position());
                     e.animator.update(dt);
-                    if (enemyModel.skeleton()) {
-                        e.animator.calculateBoneTransforms(&enemyModel.skeleton().value());
+                    if (e.def->model->skeleton()) {
+                        e.animator.calculateBoneTransforms(&e.def->model->skeleton().value());
                     }
                 }
             }
@@ -515,7 +606,8 @@ const render::AnimationClip* runAnim = nullptr;
                 if (!p.alive()) continue;
                 for (auto& e : enemies) {
                     if (!e.alive()) continue;
-                    if (glm::distance(p.position, e.hitCentre()) < game::kEnemyRadius) {
+                    float hitRadius = e.def ? e.def->radius : game::kEnemyRadius;
+                    if (glm::distance(p.position, e.hitCentre()) < hitRadius) {
                         e.hp -= 1;
                         p.age = p.maxAge;          // mark projectile for cull
                         if (!e.alive()) {
@@ -682,28 +774,69 @@ const render::AnimationClip* runAnim = nullptr;
             terrain.mesh().draw();
             checker.bind(0); // restore for subsequent geometry
 
-            // Enemies: animated Harpy models.
+            // Enemies: track the active def to avoid redundant shader state changes
+            // when consecutive enemies share a type.
             if (!enemies.empty()) {
                 worldShader.setVec3("uTint", glm::vec3(1.0f));
-                bool hasBones = enemyModel.skeleton().has_value();
-                worldShader.setInt("uHasBones", hasBones ? 1 : 0);
+                const game::EnemyDef* activeDef = nullptr;
 
                 for (const auto& e : enemies) {
+                    if (!e.def) continue;
+
+                    if (e.def != activeDef) {
+                        activeDef = e.def;
+                        worldShader.setInt("uHasBones",
+                            activeDef->model->skeleton().has_value() ? 1 : 0);
+                    }
+
+                    // Procedural walk bob for animals with no skeletal animation.
+                    float bob = 0.0f;
+                    if (activeDef->bobFreq > 0.0f && glm::length(e.velocity) > 1e-4f) {
+                        float phase = e.position.x * 0.31f + e.position.z * 0.71f;
+                        bob = std::sin(time.total() * activeDef->bobFreq + phase)
+                              * activeDef->bobAmp;
+                    }
+
                     glm::mat4 M(1.0f);
-                    // The Harpy model origin is centered. Lift it so its feet touch the floor.
-                    M = glm::translate(M, e.position + glm::vec3(0.0f, game::kEnemyHeight, 0.0f));
-                    
-                    // Rotate to face velocity
-                    if (glm::length(e.velocity) > 1e-4f) {
+                    M = glm::translate(M, e.position + glm::vec3(0.0f, activeDef->height + bob, 0.0f));
+                    const bool moving = glm::length(e.velocity) > 1e-4f;
+                    if (moving) {
                         glm::vec3 fwd = glm::normalize(e.velocity);
                         float angle = std::atan2(fwd.x, fwd.z);
                         M = glm::rotate(M, angle, glm::vec3(0.0f, 1.0f, 0.0f));
                     }
-                    
-                    M = glm::scale(M, glm::vec3(game::kEnemyScale));
+                    // baseRoll is applied right after the chase yaw so it acts
+                    // as a true side-lean around the model's final forward axis,
+                    // regardless of which way the enemy is facing.
+                    if (activeDef->baseRollDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(activeDef->baseRollDeg),
+                                        glm::vec3(0.0f, 0.0f, 1.0f));
+                    }
+                    // Per-model fix-up rotations. baseYaw is applied first so it
+                    // turns the model after basePitch puts it upright; together
+                    // they reorient an arbitrary GLB into the engine's
+                    // "Y up, +Z forward" convention.
+                    if (activeDef->baseYawDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(activeDef->baseYawDeg),
+                                        glm::vec3(0.0f, 1.0f, 0.0f));
+                    }
+                    if (activeDef->basePitchDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(activeDef->basePitchDeg),
+                                        glm::vec3(1.0f, 0.0f, 0.0f));
+                    }
+                    // Chicken has no skeleton: simulate running posture with a forward lean
+                    // and a slight side-to-side roll that syncs with the vertical bob.
+                    if (activeDef->bobFreq > 0.0f && moving) {
+                        float phase = e.position.x * 0.31f + e.position.z * 0.71f;
+                        float roll  = glm::radians(6.0f)
+                                      * std::sin(time.total() * activeDef->bobFreq * 0.5f + phase);
+                        M = glm::rotate(M, glm::radians(-20.0f), glm::vec3(1.0f, 0.0f, 0.0f)); // lean forward
+                        M = glm::rotate(M, roll,                  glm::vec3(0.0f, 0.0f, 1.0f)); // side sway
+                    }
+                    M = glm::scale(M, glm::vec3(activeDef->scale));
                     worldShader.setMat4("uModel", M);
 
-                    if (hasBones) {
+                    if (activeDef->model->skeleton()) {
                         const auto& matrices = e.animator.finalBoneMatrices();
                         for (size_t i = 0; i < matrices.size() && i < 100; ++i) {
                             char buf[32];
@@ -712,7 +845,7 @@ const render::AnimationClip* runAnim = nullptr;
                         }
                     }
 
-                    for (const auto& sub : enemyModel.meshes()) {
+                    for (const auto& sub : activeDef->model->meshes()) {
                         if (sub.diffuse) sub.diffuse->bind(0);
                         sub.mesh.draw();
                     }

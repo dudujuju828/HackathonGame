@@ -1,0 +1,6 @@
+[model] assets/models/syringe.glb: 0 raw animations, 0 skins
+[model] assets/models/Harpy.glb: 2 raw animations, 1 skins
+[model] assets/models/Bulldog.glb: 1 raw animations, 1 skins
+[model] assets/models/Cat.glb: 0 raw animations, 1 skins
+[model] assets/models/Pig.glb: 1 raw animations, 1 skins
+[model] assets/models/Chicken.glb: 0 raw animations, 0 skins

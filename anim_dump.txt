@@ -1,0 +1,9 @@
+[anims] Harpy (2 clips):
+  [0] "simple flyght"
+  [1] "STAY STILL"
+[anims] Bulldog (1 clips):
+  [0] "Sitting"
+[anims] Cat (0 clips):
+[anims] Pig (1 clips):
+  [0] "ArmatureAction"
+[anims] Chicken (0 clips):
