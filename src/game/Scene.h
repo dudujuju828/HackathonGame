@@ -11,6 +11,7 @@ enum class Scene {
     Journal,    // field journal — species/disease reference, opened with J
     Loot,       // chest opened, popup awaiting click-to-continue
     GameOver,   // player died — shows restart screen
+    Victory,    // all 10 waves survived and all antidotes collected
 };
 
 }  // namespace game

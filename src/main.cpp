@@ -625,6 +625,12 @@ int main() {
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                     input.resetMouseDelta();
                 }
+                // All waves complete — victory.
+                if (waveManager.finished() && scene == game::Scene::Playing) {
+                    scene = game::Scene::Victory;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    input.resetMouseDelta();
+                }
             } else {
                 spawner.update(dt, enemies, player.position());
             }
@@ -1167,6 +1173,33 @@ int main() {
 
             // GameOver: R key (or Enter) restarts everything from scratch.
             if (scene == game::Scene::GameOver) {
+                const bool curR = input.key(GLFW_KEY_R) || input.key(GLFW_KEY_ENTER);
+                const bool justPressed = curR && !prevRestartKey;
+                prevRestartKey = curR;
+                if (justPressed) {
+                    player.restart();
+                    player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
+                    weapon.projectileCount = 1;
+                    weapon.fanColumns      = 1;
+                    projectileSpeed        = 25.0f;
+                    enemies.clear();
+                    chests.clear();
+                    antidoteBoxes.clear();
+                    antidoteSpawnedForWave = -1;
+                    projectiles.clear();
+                    lootToasts.clear();
+                    orbitalCooldowns.clear();
+                    orbitalAngle = 0.0f;
+                    ringCooldown = 0.0f;
+                    waveManager.reset();
+                    scene = game::Scene::Playing;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    input.resetMouseDelta();
+                }
+            }
+
+            // Victory: R key (or Enter) restarts from scratch.
+            if (scene == game::Scene::Victory) {
                 const bool curR = input.key(GLFW_KEY_R) || input.key(GLFW_KEY_ENTER);
                 const bool justPressed = curR && !prevRestartKey;
                 prevRestartKey = curR;
@@ -1749,6 +1782,65 @@ int main() {
                 journalScreen.draw(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::StartMenu) {
                 startMenu.draw(hud, text, window.width(), window.height());
+            } else if (scene == game::Scene::Victory) {
+                const int   W      = window.width();
+                const int   H      = window.height();
+                const float panelW = 640.0f;
+                const float panelH = 340.0f;
+                const float panelX = W * 0.5f - panelW * 0.5f;
+                const float panelY = H * 0.5f - panelH * 0.5f;
+
+                hud.drawRect(W, H, glm::vec2(0.0f, 0.0f),
+                             glm::vec2(static_cast<float>(W), static_cast<float>(H)),
+                             glm::vec3(0.0f), 0.80f);
+                hud.drawProgress(W, H, glm::vec2(panelX, panelY),
+                                 glm::vec2(panelW, panelH),
+                                 1.0f,
+                                 glm::vec3(0.02f, 0.06f, 0.02f),
+                                 glm::vec3(0.02f, 0.06f, 0.02f),
+                                 glm::vec3(0.20f, 0.65f, 0.20f),
+                                 2.5f, 0.97f);
+                {
+                    const std::string title = "MISSION COMPLETE";
+                    const float sc = 4.0f;
+                    const float tw = render::Text::measure(title) * sc;
+                    text.draw(W, H, panelX + (panelW - tw) * 0.5f,
+                              panelY + 36.0f, title, sc,
+                              glm::vec4(0.40f, 1.00f, 0.45f, 1.0f));
+                }
+                {
+                    const std::string sub = "All antidote caches secured. Zone Alpha-7 contained.";
+                    const float sc = 1.7f;
+                    const float sw = render::Text::measure(sub) * sc;
+                    text.draw(W, H, panelX + (panelW - sw) * 0.5f,
+                              panelY + 130.0f, sub, sc,
+                              glm::vec4(0.75f, 0.92f, 0.75f, 1.0f));
+                }
+                {
+                    const std::string waves = "All " +
+                        std::to_string(waveManager.totalWaves()) + " waves survived.";
+                    const float sc = 1.8f;
+                    const float ww = render::Text::measure(waves) * sc;
+                    text.draw(W, H, panelX + (panelW - ww) * 0.5f,
+                              panelY + 170.0f, waves, sc,
+                              glm::vec4(0.60f, 0.88f, 0.62f, 1.0f));
+                }
+                {
+                    const std::string lvl = "Reached level " + std::to_string(player.level()) + ".";
+                    const float sc = 1.8f;
+                    const float lw = render::Text::measure(lvl) * sc;
+                    text.draw(W, H, panelX + (panelW - lw) * 0.5f,
+                              panelY + 206.0f, lvl, sc,
+                              glm::vec4(0.60f, 0.88f, 0.62f, 1.0f));
+                }
+                {
+                    const std::string hint = "PRESS R TO PLAY AGAIN";
+                    const float sc = 2.0f;
+                    const float hw = render::Text::measure(hint) * sc;
+                    text.draw(W, H, panelX + (panelW - hw) * 0.5f,
+                              panelY + panelH - 44.0f, hint, sc,
+                              glm::vec4(0.70f, 0.90f, 0.70f, 1.0f));
+                }
             }
 
             // Loot toasts — top-left achievement style. Slide in, hold, fade.
