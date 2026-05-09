@@ -1,0 +1,28 @@
+# waves.txt — wave definitions, parsed at startup.
+#
+# Format:
+#   WAVE "Display Name" duration_sec
+#   GROUP at_sec  Name count [Name count ...]
+#
+# - Groups within a wave fire when wave-elapsed >= at_sec.
+# - The wave ends after duration_sec (any unspawned groups skip).
+# - Enemy names are case-insensitive: Harpy, Bulldog, Cat, Pig, Chicken.
+# - Comments (#) and blank lines are ignored.
+
+WAVE "First Encounter" 30
+GROUP  0   Chicken 2 Harpy 1
+GROUP  8   Bulldog 1 Chicken 2
+GROUP 18   Harpy 2 Cat 1
+
+WAVE "Stampede" 40
+GROUP  0   Harpy 3
+GROUP  6   Bulldog 1 Chicken 3
+GROUP 14   Cat 3 Pig 1
+GROUP 24   Harpy 2 Bulldog 2 Chicken 2
+
+WAVE "Outbreak" 50
+GROUP  0   Cat 4 Chicken 4
+GROUP  8   Bulldog 2 Pig 2
+GROUP 18   Harpy 4 Cat 3
+GROUP 30   Bulldog 3 Pig 3 Chicken 3
+GROUP 40   Harpy 5

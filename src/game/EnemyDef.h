@@ -10,6 +10,7 @@ namespace game {
 // Immutable per-type data shared across every enemy of the same kind.
 // All instances hold a const pointer into a table allocated at startup.
 struct EnemyDef {
+    const char*                  name     = "?";    // referenced from waves.txt
     render::Model*               model    = nullptr;
     const render::AnimationClip* walkAnim = nullptr;
     float scale         = 0.30f;  // uniform GLB scale at draw time

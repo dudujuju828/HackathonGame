@@ -14,6 +14,8 @@
 #include "game/SettingsMenu.h"
 #include "game/StatsScreen.h"
 #include "game/Upgrade.h"
+#include "game/Wave.h"
+#include "game/WaveManager.h"
 #include "game/Weapon.h"
 #include "render/Camera.h"
 #include "render/Framebuffer.h"
@@ -218,13 +220,13 @@ int main() {
         // Pig     -> "ArmatureAction"       only clip in GLB
         // Chicken -> no skeleton/clips      procedural bob + forward lean in render matrix
         //
-        //              model          walkAnim             scale   height  radius  bobFreq  bobAmp  basePitchDeg  baseYawDeg  baseRollDeg  maxHp
+        // name (for waves.txt lookup),  model, walkAnim, scale, height, radius, bobFreq, bobAmp, basePitchDeg, baseYawDeg, baseRollDeg, maxHp
         const game::EnemyDef enemyDefs[] = {
-            { &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 0.60f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   3 },
-            { &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 0.60f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   5 },
-            { &catModel,     nullptr,                                0.45f, 0.25f, 0.40f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   1 },
-            { &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 0.50f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   4 },
-            { &chickenModel, nullptr,                                2.50f, 0.80f, 0.50f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   2 },
+            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 0.60f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   3 },
+            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 0.60f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   5 },
+            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 0.40f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   1 },
+            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 0.50f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   4 },
+            { "Chicken", &chickenModel, nullptr,                                2.50f, 0.80f, 0.50f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   2 },
         };
 
         render::Model chestModel;
@@ -252,9 +254,20 @@ int main() {
         std::vector<game::Enemy> enemies;
         enemies.reserve(32);
         game::EnemySpawner spawner;
-        spawner.intervalSec = 2.0f;
-        spawner.spawnRadius = 8.0f;
+        spawner.intervalSec    = 2.0f;
+        spawner.spawnMinRadius = 14.0f;  // never closer than this to the player
+        spawner.spawnRadius    = 22.0f;  // upper bound of the random spawn distance
         spawner.setDefs(enemyDefs, static_cast<int>(std::size(enemyDefs)));
+
+        game::WaveManager waveManager;
+        {
+            std::vector<game::WaveDef> waves;
+            if (game::loadWaves("assets/waves.txt", waves)) {
+                waveManager.init(std::move(waves), &spawner);
+            } else {
+                std::fprintf(stderr, "[main] no waves loaded — using fallback random spawner\n");
+            }
+        }
 
         std::vector<game::Chest> chests;
         chests.reserve(16);
@@ -424,6 +437,7 @@ int main() {
                     projectiles.clear();
                     enemies.clear();
                     chests.clear();
+                    waveManager.reset();
                 }
             }
 
@@ -479,19 +493,26 @@ int main() {
                 }
             }
 
-            // Keep enemies on the terrain surface.
-            for (auto& e : enemies) {
-                if (e.alive())
-                    e.position.y = terrain.heightAt(e.position.x, e.position.z);
-            }
-
             // Advance and cull projectiles.
             for (auto& p : projectiles) {
                 p.position += p.velocity * dt;
                 p.age      += dt;
             }
             // Spawn + advance enemies (also gated by Playing scene).
-            spawner.update(dt, enemies, player.position());
+            // WaveManager owns scheduling now; falls back to the legacy spawner
+            // tick only if no waves were loaded.
+            const size_t enemiesBeforeSpawn = enemies.size();
+            if (waveManager.totalWaves() > 0) {
+                waveManager.update(dt, enemies, player.position());
+            } else {
+                spawner.update(dt, enemies, player.position());
+            }
+            // Snap freshly-spawned enemies to terrain height once. After this
+            // their Y stays put — pathfinding is XZ only, so they don't bob.
+            for (size_t i = enemiesBeforeSpawn; i < enemies.size(); ++i) {
+                enemies[i].position.y = terrain.heightAt(enemies[i].position.x,
+                                                          enemies[i].position.z);
+            }
 
             for (auto& e : enemies) {
                 if (e.alive() && e.def) {
@@ -1056,6 +1077,28 @@ int main() {
                           hud.xpBar().topPx - 14.0f,
                           lvl, lvlScale,
                           glm::vec4(0.85f, 1.0f, 0.85f, 1.0f));
+
+                // Wave name + countdown, top-centre below the XP bar.
+                if (waveManager.totalWaves() > 0) {
+                    char waveBuf[96];
+                    if (waveManager.finished()) {
+                        std::snprintf(waveBuf, sizeof(waveBuf), "ALL WAVES CLEAR");
+                    } else {
+                        std::snprintf(waveBuf, sizeof(waveBuf), "WAVE %d / %d  %s  %.0fs",
+                                      waveManager.currentWaveIndex() + 1,
+                                      waveManager.totalWaves(),
+                                      waveManager.currentWaveName().c_str(),
+                                      waveManager.waveTimeRemaining());
+                    }
+                    const std::string ws = waveBuf;
+                    const float wScale = 1.6f;
+                    const float wW     = render::Text::measure(ws) * wScale;
+                    text.draw(window.width(), window.height(),
+                              window.width() * 0.5f - wW * 0.5f,
+                              hud.xpBar().topPx + hud.xpBar().sizePx.y + 14.0f,
+                              ws, wScale,
+                              glm::vec4(1.0f, 0.92f, 0.78f, 1.0f));
+                }
             } else if (scene == game::Scene::Settings) {
                 settingsMenu.draw(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::LevelUp) {
