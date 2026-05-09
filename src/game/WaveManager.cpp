@@ -18,9 +18,10 @@ void WaveManager::init(std::vector<WaveDef> waves, EnemySpawner* spawner) {
 }
 
 void WaveManager::reset() {
-    currentWave_ = 0;
-    waveElapsed_ = 0.0f;
-    finishedAll_ = waves_.empty();
+    currentWave_       = 0;
+    waveElapsed_       = 0.0f;
+    finishedAll_       = waves_.empty();
+    antidoteCollected_ = false;
     resetGroupFlags_();
 }
 
@@ -71,16 +72,23 @@ void WaveManager::update(float dt, std::vector<Enemy>& enemies, const glm::vec3&
         }
     }
 
-    // Wave's duration is up — advance.
-    if (waveElapsed_ >= w.duration) {
+    // Wave's duration is up AND the antidote box has been collected — advance.
+    if (waveElapsed_ >= w.duration && antidoteCollected_) {
         currentWave_++;
-        waveElapsed_ = 0.0f;
+        waveElapsed_       = 0.0f;
+        antidoteCollected_ = false;
         if (currentWave_ >= static_cast<int>(waves_.size())) {
             finishedAll_ = true;
         } else {
             resetGroupFlags_();
         }
     }
+}
+
+bool WaveManager::waitingForAntidote() const {
+    if (finishedAll_) return false;
+    if (currentWave_ >= static_cast<int>(waves_.size())) return false;
+    return waveElapsed_ >= waves_[currentWave_].duration && !antidoteCollected_;
 }
 
 }  // namespace game

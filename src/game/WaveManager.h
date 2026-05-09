@@ -31,13 +31,22 @@ public:
     // Reset back to wave 0; called when the player swaps maps or restarts.
     void reset();
 
+    // Called by main when the player collects the wave's antidote box.
+    void setAntidoteCollected(bool v) { antidoteCollected_ = v; }
+    bool antidoteCollected() const { return antidoteCollected_; }
+
+    // True once the wave duration has elapsed but the antidote hasn't been
+    // picked up yet — used by the HUD to flash a warning.
+    bool waitingForAntidote() const;
+
 private:
     std::vector<WaveDef> waves_;
-    EnemySpawner*        spawner_     = nullptr;
-    int                  currentWave_ = 0;
-    float                waveElapsed_ = 0.0f;
+    EnemySpawner*        spawner_            = nullptr;
+    int                  currentWave_        = 0;
+    float                waveElapsed_        = 0.0f;
     std::vector<bool>    groupSpawned_;
-    bool                 finishedAll_ = false;
+    bool                 finishedAll_        = false;
+    bool                 antidoteCollected_  = false;
 
     void resetGroupFlags_();
 };

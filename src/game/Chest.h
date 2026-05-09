@@ -12,7 +12,7 @@ constexpr float kChestPickupRadius = 2.5f;    // metres; how close the player ne
 constexpr float kChestScale        = 0.0048f; // uniform scale at draw time
 constexpr float kChestYOffset      = 0.0f;    // model origin already sits at the floor for this GLB
 constexpr float kChestBasePitchDeg = -90.0f;  // rotate around X so the lid faces up (model ships Z-up)
-constexpr float kChestDropChance   = 0.50f;   // probability per basic-enemy kill
+constexpr float kChestDropChance   = 0.20f;   // probability per basic-enemy kill
 constexpr float kChestFadeDuration = 0.8f;    // seconds — how long the chest fades after opening
 
 enum class ChestState {

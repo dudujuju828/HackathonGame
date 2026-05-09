@@ -1,6 +1,7 @@
 #include "core/Input.h"
 #include "core/Time.h"
 #include "core/Window.h"
+#include "game/AntidoteBox.h"
 #include "game/Chest.h"
 #include "game/Enemy.h"
 #include "game/Item.h"
@@ -234,6 +235,11 @@ int main() {
         if (!chestModel.loadFromFile("assets/models/treasure_chest.glb")) {
             std::fprintf(stderr, "[main] failed to load chest model\n");
         }
+
+        render::Model antidoteBoxModel;
+        if (!antidoteBoxModel.loadFromFile("assets/models/Antidote_box.glb")) {
+            std::fprintf(stderr, "[main] failed to load antidote box model\n");
+        }
         const render::AnimationClip* chestOpenAnim = nullptr;
         if (!chestModel.animations().empty()) {
             chestOpenAnim = &chestModel.animations()[0];
@@ -272,6 +278,11 @@ int main() {
 
         std::vector<game::Chest> chests;
         chests.reserve(16);
+
+        std::vector<game::AntidoteBox> antidoteBoxes;
+        antidoteBoxes.reserve(4);
+        int antidoteSpawnedForWave = -1;
+
         float ringCooldown = 0.0f;
 
         std::vector<game::ItemInstance> pendingLoot;
@@ -508,9 +519,39 @@ int main() {
             // tick only if no waves were loaded.
             if (waveManager.totalWaves() > 0) {
                 waveManager.update(dt, enemies, player.position());
+
+                // Spawn one antidote box at the start of each new wave.
+                const int curWave = waveManager.currentWaveIndex();
+                if (!waveManager.finished() && curWave != antidoteSpawnedForWave) {
+                    antidoteSpawnedForWave = curWave;
+                    antidoteBoxes.clear();
+                    const float angle = game::rand01() * 6.28318530718f;
+                    const float spx = player.position().x + std::cos(angle) * game::kAntidoteSpawnDist;
+                    const float spz = player.position().z + std::sin(angle) * game::kAntidoteSpawnDist;
+                    game::AntidoteBox box;
+                    box.position = glm::vec3(spx, terrain.heightAt(spx, spz), spz);
+                    box.yawRad   = game::rand01() * 6.28318530718f;
+                    antidoteBoxes.push_back(box);
+                }
             } else {
                 spawner.update(dt, enemies, player.position());
             }
+
+            // Antidote box: tick bob and check player proximity for collection.
+            for (auto& box : antidoteBoxes) {
+                if (box.state != game::AntidoteBoxState::Active) continue;
+                box.bobTimer += dt;
+                const float dx = box.position.x - player.position().x;
+                const float dz = box.position.z - player.position().z;
+                if (dx * dx + dz * dz < game::kAntidotePickupRadius * game::kAntidotePickupRadius) {
+                    box.state = game::AntidoteBoxState::Collected;
+                    waveManager.setAntidoteCollected(true);
+                }
+            }
+            antidoteBoxes.erase(
+                std::remove_if(antidoteBoxes.begin(), antidoteBoxes.end(),
+                    [](const game::AntidoteBox& b){ return b.state == game::AntidoteBoxState::Collected; }),
+                antidoteBoxes.end());
             // Pathfinding is XZ only (handled in Enemy::update). Y is forced
             // to the terrain height under each enemy every frame so the model
             // tracks the surface and never clips into hills.
@@ -550,6 +591,8 @@ int main() {
                 player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
                 enemies.clear();
                 chests.clear();
+                antidoteBoxes.clear();
+                antidoteSpawnedForWave = -1;
                 projectiles.clear();
                 pendingLoot.clear();
                 waveManager.reset();
@@ -967,6 +1010,47 @@ int main() {
                 worldShader.use();
             }
 
+            // Antidote boxes — hovering, slowly rotating, green-glowing.
+            if (!antidoteBoxes.empty()) {
+                worldShader.setInt  ("uHasBones", 0);
+                worldShader.setFloat("uAlpha",    1.0f);
+                for (const auto& box : antidoteBoxes) {
+                    if (box.state != game::AntidoteBoxState::Active) continue;
+                    const float gh  = terrain.heightAt(box.position.x, box.position.z);
+                    const float bob = std::sin(box.bobTimer * game::kAntidoteBobFreq * 6.28318530718f)
+                                      * game::kAntidoteBobAmp;
+                    glm::mat4 M(1.0f);
+                    M = glm::translate(M, glm::vec3(box.position.x,
+                                                    gh + game::kAntidoteYOffset + bob,
+                                                    box.position.z));
+                    M = glm::rotate(M, box.yawRad + box.bobTimer * 0.9f,
+                                    glm::vec3(0.0f, 1.0f, 0.0f));
+                    M = glm::scale(M, glm::vec3(game::kAntidoteScale));
+                    worldShader.setMat4("uModel", M);
+                    worldShader.setVec3("uTint",  glm::vec3(0.5f, 1.0f, 0.6f));
+                    for (const auto& sub : antidoteBoxModel.meshes()) {
+                        if (sub.diffuse) sub.diffuse->bind(0);
+                        sub.mesh.draw();
+                    }
+                }
+                worldShader.setVec3("uTint", glm::vec3(1.0f));
+
+                // Green glow disc beneath each active box.
+                {
+                    const glm::mat4 vp2 = cam.proj(window.aspect()) * cam.view();
+                    for (const auto& box : antidoteBoxes) {
+                        if (box.state != game::AntidoteBoxState::Active) continue;
+                        const float gh = terrain.heightAt(box.position.x, box.position.z);
+                        glow.draw(vp2,
+                                  glm::vec3(box.position.x, gh + 0.02f, box.position.z),
+                                  /*radius=*/2.2f,
+                                  glm::vec3(0.3f, 1.0f, 0.45f),
+                                  /*intensity=*/1.3f);
+                    }
+                    worldShader.use();
+                }
+            }
+
             // Particles render after chests so they sit on top of the glow disc.
             // Drawn unconditionally so puffs outlive their parent chest.
             {
@@ -1141,6 +1225,38 @@ int main() {
                         const float angle = std::atan2(-edge.y, edge.x);
                         arrows.draw(W, H, px, py, angle, arrowSize, arrowColor);
                     }
+
+                    // Off-screen indicator for the antidote box (bright green arrow).
+                    for (const auto& box : antidoteBoxes) {
+                        if (box.state != game::AntidoteBoxState::Active) continue;
+                        const glm::vec3 boxCentre(box.position.x,
+                                                   terrain.heightAt(box.position.x, box.position.z)
+                                                       + game::kAntidoteYOffset + 0.5f,
+                                                   box.position.z);
+                        glm::vec4 clip = vp * glm::vec4(boxCentre, 1.0f);
+                        const bool behind = clip.w <= 1e-3f;
+                        glm::vec2 ndc;
+                        if (behind) {
+                            ndc = glm::vec2(clip.x, clip.y);
+                        } else {
+                            ndc = glm::vec2(clip.x / clip.w, clip.y / clip.w);
+                        }
+                        const bool onScreen = !behind &&
+                            std::abs(ndc.x) <= 1.0f && std::abs(ndc.y) <= 1.0f;
+                        if (!onScreen) {
+                            const float axb = std::abs(ndc.x);
+                            const float ayb = std::abs(ndc.y);
+                            const float mb  = std::max(std::max(axb, ayb), 1e-3f);
+                            glm::vec2 edgeB = ndc / mb;
+                            const float halfWb = static_cast<float>(W) * 0.5f - insetX;
+                            const float halfHb = static_cast<float>(H) * 0.5f - insetY;
+                            const float pxb = static_cast<float>(W) * 0.5f + edgeB.x * halfWb;
+                            const float pyb = static_cast<float>(H) * 0.5f - edgeB.y * halfHb;
+                            const float angb = std::atan2(-edgeB.y, edgeB.x);
+                            arrows.draw(W, H, pxb, pyb, angb, 18.0f,
+                                        glm::vec4(0.3f, 1.0f, 0.5f, 0.85f));
+                        }
+                    }
                 }
 
                 // "LV N" label centred above the XP bar.
@@ -1170,11 +1286,35 @@ int main() {
                     const std::string ws = waveBuf;
                     const float wScale = 1.6f;
                     const float wW     = render::Text::measure(ws) * wScale;
+                    const float waveLineY = hud.xpBar().topPx + hud.xpBar().sizePx.y + 14.0f;
                     text.draw(window.width(), window.height(),
                               window.width() * 0.5f - wW * 0.5f,
-                              hud.xpBar().topPx + hud.xpBar().sizePx.y + 14.0f,
+                              waveLineY,
                               ws, wScale,
                               glm::vec4(1.0f, 0.92f, 0.78f, 1.0f));
+
+                    // Antidote status line: distance while active, pulsing warning
+                    // when the wave timer expired but the box is not yet collected.
+                    if (!antidoteBoxes.empty() && !waveManager.finished()) {
+                        const auto& box = antidoteBoxes.front();
+                        const float dx  = box.position.x - player.position().x;
+                        const float dz  = box.position.z - player.position().z;
+                        const float boxDist = std::sqrt(dx * dx + dz * dz);
+                        char antiBuf[64];
+                        std::snprintf(antiBuf, sizeof(antiBuf),
+                                      "COLLECT ANTIDOTE BOX  %.0fm", boxDist);
+                        const std::string antiStr = antiBuf;
+                        const float antiScale = 1.6f;
+                        const float antiW = render::Text::measure(antiStr) * antiScale;
+                        const float pulse = 0.65f + 0.35f * std::sin(
+                            waveManager.waveElapsed() * 5.0f);
+                        const float urgency = waveManager.waitingForAntidote() ? 1.0f : 0.55f;
+                        text.draw(window.width(), window.height(),
+                                  window.width() * 0.5f - antiW * 0.5f,
+                                  waveLineY + wScale * 10.0f + 6.0f,
+                                  antiStr, antiScale,
+                                  glm::vec4(0.35f, 1.0f, 0.5f, pulse * urgency));
+                    }
                 }
             } else if (scene == game::Scene::Settings) {
                 settingsMenu.draw(hud, text, window.width(), window.height());
