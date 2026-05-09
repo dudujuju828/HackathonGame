@@ -36,6 +36,70 @@
 
 namespace {
 
+// Procedural walk AnimationClip for Bulldog (38-joint skeleton).
+// Joint indices come from the Bulldog.glb skeleton dump:
+//   0  _rootJoint     (root)
+//   2  spine01_02     (mid-spine)
+//  14  frontLeg01.L / 19 frontLeg01.R
+//  24  hindLeg01.L  / 31 hindLeg01.R
+render::AnimationClip buildDogWalk(const render::Skeleton& skel) {
+    render::AnimationClip clip;
+    clip.name     = "ProceduralWalk";
+    clip.duration = 0.7f;  // one full stride ~1.4 strides/s
+
+    constexpr float kPi = 3.14159265358979f;
+    const float     T   = clip.duration;
+
+    // Swing a joint ±amplitude around its local X axis (forward/backward for leg bones).
+    // phaseOffset = pi flips the leg to opposite position → diagonal gait.
+    auto addSwing = [&](int jointIdx, float amplitude, float phaseOffset) {
+        if (jointIdx >= static_cast<int>(skel.joints.size())) return;
+        render::AnimationChannel ch;
+        ch.targetJoint = jointIdx;
+        const glm::quat rest = skel.joints[jointIdx].rotation;
+        for (int k = 0; k <= 8; ++k) {
+            float t     = T * (static_cast<float>(k) / 8.0f);
+            float angle = amplitude * std::sin(phaseOffset + (2.0f * kPi / T) * t);
+            ch.rotations.push_back({ t, rest * glm::angleAxis(angle, glm::vec3(1.0f, 0.0f, 0.0f)) });
+        }
+        clip.channels.push_back(std::move(ch));
+    };
+
+    // Diagonal gait: front-L & hind-R swing together; front-R & hind-L swing together.
+    addSwing(14, glm::radians(30.0f), 0.0f);   // frontLeg01.L
+    addSwing(19, glm::radians(30.0f), kPi);    // frontLeg01.R
+    addSwing(24, glm::radians(35.0f), kPi);    // hindLeg01.L  (anti-phase with front-L)
+    addSwing(31, glm::radians(35.0f), 0.0f);   // hindLeg01.R  (in-phase with front-L)
+
+    // Spine lateral sway at 2x stride frequency.
+    {
+        render::AnimationChannel ch;
+        ch.targetJoint = 2;  // spine01_02
+        const glm::quat rest = skel.joints[2].rotation;
+        for (int k = 0; k <= 8; ++k) {
+            float t   = T * (static_cast<float>(k) / 8.0f);
+            float ang = glm::radians(3.0f) * std::sin((4.0f * kPi / T) * t);
+            ch.rotations.push_back({ t, rest * glm::angleAxis(ang, glm::vec3(0.0f, 0.0f, 1.0f)) });
+        }
+        clip.channels.push_back(std::move(ch));
+    }
+
+    // Root vertical bounce at 2x stride frequency (rises on each footfall).
+    {
+        render::AnimationChannel ch;
+        ch.targetJoint = 0;  // _rootJoint
+        const glm::vec3 restT = skel.joints[0].translation;
+        for (int k = 0; k <= 8; ++k) {
+            float t = T * (static_cast<float>(k) / 8.0f);
+            float y = 0.025f * std::abs(std::sin((2.0f * kPi / T) * t));
+            ch.translations.push_back({ t, restT + glm::vec3(0.0f, y, 0.0f) });
+        }
+        clip.channels.push_back(std::move(ch));
+    }
+
+    return clip;
+}
+
 void buildCube(std::vector<render::Vertex>& verts, std::vector<uint32_t>& idx) {
     struct Face { glm::vec3 n; glm::vec3 a, b, c, d; };
     const Face faces[6] = {
@@ -129,6 +193,11 @@ int main() {
         loadEnemy(pigModel,     "assets/models/Pig.glb");
         loadEnemy(chickenModel, "assets/models/Chicken.glb");
 
+        // Build the procedural walk clip for Bulldog now that the skeleton is loaded.
+        render::AnimationClip bulldogWalkClip;
+        if (bulldogModel.skeleton())
+            bulldogWalkClip = buildDogWalk(bulldogModel.skeleton().value());
+
         // Find a named animation clip; returns nullptr if the model has none or name not found.
         auto findAnim = [](const render::Model& m, const char* name) -> const render::AnimationClip* {
             for (const auto& clip : m.animations())
@@ -136,21 +205,20 @@ int main() {
             return m.animations().empty() ? nullptr : &m.animations()[0];
         };
 
-        // Per-type tuning. Animations used:
-        //   Harpy   -> "simple flyght"  (flight cycle)
-        //   Bulldog -> "Sitting"        (only clip available in the GLB)
-        //   Cat     -> none             (GLB has no animation data)
-        //   Pig     -> "ArmatureAction" (only clip available in the GLB)
-        //   Chicken -> none             (GLB has no animation data)
-        // scale = uniform GLB scale at draw time
-        // height = world Y to lift model so feet touch floor; also the hit-sphere centre
-        // radius = collision sphere radius (world units)
+        // Per-type tuning.
+        // Harpy   -> "simple flyght"       real skeletal flight anim
+        // Bulldog -> bulldogWalkClip        procedural skeletal walk (4-leg diagonal gait)
+        // Cat     -> no clips in GLB        procedural Y-bob walk substitute
+        // Pig     -> "ArmatureAction"       only clip in GLB
+        // Chicken -> no skeleton/clips      procedural bob + forward lean in render matrix
+        //
+        //              model          walkAnim             scale   height  radius  bobFreq  bobAmp
         const game::EnemyDef enemyDefs[] = {
-            { &harpyModel,   findAnim(harpyModel,   "simple flyght"),  0.30f, 1.70f, 0.60f },
-            { &bulldogModel, findAnim(bulldogModel, "Sitting"),         1.50f, 0.70f, 0.60f },
-            { &catModel,     nullptr,                                   1.50f, 0.50f, 0.50f },
-            { &pigModel,     findAnim(pigModel,     "ArmatureAction"),  1.50f, 0.70f, 0.60f },
-            { &chickenModel, nullptr,                                   1.00f, 0.55f, 0.40f },
+            { &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 0.60f, 0.0f,  0.0f  },
+            { &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 0.60f, 0.0f,  0.0f  },
+            { &catModel,     nullptr,                                0.45f, 0.25f, 0.40f, 8.0f,  0.04f },
+            { &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 0.50f, 0.0f,  0.0f  },
+            { &chickenModel, nullptr,                                2.50f, 0.80f, 0.50f, 16.0f, 0.06f },
         };
 
         game::Weapon weapon;
@@ -466,12 +534,30 @@ int main() {
                             activeDef->model->skeleton().has_value() ? 1 : 0);
                     }
 
+                    // Procedural walk bob for animals with no skeletal animation.
+                    float bob = 0.0f;
+                    if (activeDef->bobFreq > 0.0f && glm::length(e.velocity) > 1e-4f) {
+                        float phase = e.position.x * 0.31f + e.position.z * 0.71f;
+                        bob = std::sin(time.total() * activeDef->bobFreq + phase)
+                              * activeDef->bobAmp;
+                    }
+
                     glm::mat4 M(1.0f);
-                    M = glm::translate(M, e.position + glm::vec3(0.0f, activeDef->height, 0.0f));
-                    if (glm::length(e.velocity) > 1e-4f) {
+                    M = glm::translate(M, e.position + glm::vec3(0.0f, activeDef->height + bob, 0.0f));
+                    const bool moving = glm::length(e.velocity) > 1e-4f;
+                    if (moving) {
                         glm::vec3 fwd = glm::normalize(e.velocity);
                         float angle = std::atan2(fwd.x, fwd.z);
                         M = glm::rotate(M, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+                    }
+                    // Chicken has no skeleton: simulate running posture with a forward lean
+                    // and a slight side-to-side roll that syncs with the vertical bob.
+                    if (activeDef->bobFreq > 0.0f && moving) {
+                        float phase = e.position.x * 0.31f + e.position.z * 0.71f;
+                        float roll  = glm::radians(6.0f)
+                                      * std::sin(time.total() * activeDef->bobFreq * 0.5f + phase);
+                        M = glm::rotate(M, glm::radians(-20.0f), glm::vec3(1.0f, 0.0f, 0.0f)); // lean forward
+                        M = glm::rotate(M, roll,                  glm::vec3(0.0f, 0.0f, 1.0f)); // side sway
                     }
                     M = glm::scale(M, glm::vec3(activeDef->scale));
                     worldShader.setMat4("uModel", M);
