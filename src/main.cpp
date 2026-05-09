@@ -13,6 +13,7 @@
 #include "game/Projectile.h"
 #include "game/Scene.h"
 #include "game/SettingsMenu.h"
+#include "game/Journal.h"
 #include "game/StatsScreen.h"
 #include "game/Upgrade.h"
 #include "game/Wave.h"
@@ -335,12 +336,15 @@ int main() {
             return 1;
         }
 
-        game::SettingsMenu settingsMenu;
-        game::LevelUpMenu  levelUpMenu;
-        game::StatsScreen  statsScreen;
+        game::SettingsMenu  settingsMenu;
+        game::LevelUpMenu   levelUpMenu;
+        game::StatsScreen   statsScreen;
+        game::JournalScreen journalScreen;
+        journalScreen.load("data/Journal.csv");
         game::Scene scene = game::Scene::Playing;
         bool prevEscape   = false;
         bool prevB        = false;
+        bool prevJ        = false;
 
         glClearColor(0.02f, 0.02f, 0.03f, 1.0f);
 
@@ -392,6 +396,22 @@ int main() {
                 }
             }
             prevB = curB;
+
+            // J toggles the journal while playing.
+            const bool curJ = input.key(GLFW_KEY_J);
+            if (curJ && !prevJ) {
+                if (scene == game::Scene::Playing) {
+                    journalScreen.open();
+                    scene = game::Scene::Journal;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    input.resetMouseDelta();
+                } else if (scene == game::Scene::Journal) {
+                    scene = game::Scene::Playing;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    input.resetMouseDelta();
+                }
+            }
+            prevJ = curJ;
 
             // Apply settings to the player camera every frame. The slider value
             // is horizontal FOV; convert to vertical FOV for glm::perspective.
@@ -456,6 +476,8 @@ int main() {
                         levelUpMenu.reset(); // Pick next set of options for subsequent level
                     }
                 }
+            } else if (scene == game::Scene::Journal) {
+                journalScreen.update(input, window.width(), window.height());
             }
 
             // Apply fullscreen toggle each frame (cheap if already in state).
@@ -1457,6 +1479,8 @@ int main() {
                 ps.orbitalCount = player.countItem(game::ItemId::OrbitalRing);
                 ps.items        = player.inventory();
                 statsScreen.draw(hud, text, window.width(), window.height(), ps);
+            } else if (scene == game::Scene::Journal) {
+                journalScreen.draw(hud, text, window.width(), window.height());
             }
 
             // Software cursor — drawn on top of any menu so the player can
