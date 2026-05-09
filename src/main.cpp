@@ -534,14 +534,20 @@ int main() {
                     box.yawRad   = game::rand01() * 6.28318530718f;
                     antidoteBoxes.push_back(box);
                 }
+                // Wave timer expired without antidote collected — game over.
+                if (waveManager.waitingForAntidote()) {
+                    player.health = 0.0f;
+                    scene = game::Scene::GameOver;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    input.resetMouseDelta();
+                }
             } else {
                 spawner.update(dt, enemies, player.position());
             }
 
-            // Antidote box: tick bob and check player proximity for collection.
+            // Antidote box: check player proximity for collection.
             for (auto& box : antidoteBoxes) {
                 if (box.state != game::AntidoteBoxState::Active) continue;
-                box.bobTimer += dt;
                 const float dx = box.position.x - player.position().x;
                 const float dz = box.position.z - player.position().z;
                 if (dx * dx + dz * dz < game::kAntidotePickupRadius * game::kAntidotePickupRadius) {
@@ -1033,22 +1039,21 @@ int main() {
             if (!antidoteBoxes.empty()) {
                 worldShader.setInt  ("uHasBones", 0);
                 worldShader.setFloat("uAlpha",    1.0f);
+                worldShader.setVec3 ("uTint",     glm::vec3(0.3f, 0.85f, 0.4f));
+                checker.bind(0);
                 for (const auto& box : antidoteBoxes) {
                     if (box.state != game::AntidoteBoxState::Active) continue;
-                    const float gh  = terrain.heightAt(box.position.x, box.position.z);
-                    const float bob = std::sin(box.bobTimer * game::kAntidoteBobFreq * 6.28318530718f)
-                                      * game::kAntidoteBobAmp;
+                    const float gh = terrain.heightAt(box.position.x, box.position.z);
                     glm::mat4 M(1.0f);
-                    M = glm::translate(M, glm::vec3(box.position.x,
-                                                    gh + game::kAntidoteYOffset + bob,
-                                                    box.position.z));
-                    M = glm::rotate(M, box.yawRad + box.bobTimer * 0.9f,
-                                    glm::vec3(0.0f, 1.0f, 0.0f));
+                    M = glm::translate(M, glm::vec3(box.position.x, gh + game::kAntidoteYOffset, box.position.z));
+                    M = glm::rotate(M, box.yawRad, glm::vec3(0.0f, 1.0f, 0.0f));
+                    M = glm::rotate(M, glm::radians(game::kAntidoteBasePitchDeg),
+                                    glm::vec3(1.0f, 0.0f, 0.0f));
                     M = glm::scale(M, glm::vec3(game::kAntidoteScale));
                     worldShader.setMat4("uModel", M);
-                    worldShader.setVec3("uTint",  glm::vec3(0.5f, 1.0f, 0.6f));
                     for (const auto& sub : antidoteBoxModel.meshes()) {
                         if (sub.diffuse) sub.diffuse->bind(0);
+                        else             checker.bind(0);
                         sub.mesh.draw();
                     }
                 }
@@ -1249,8 +1254,7 @@ int main() {
                     for (const auto& box : antidoteBoxes) {
                         if (box.state != game::AntidoteBoxState::Active) continue;
                         const glm::vec3 boxCentre(box.position.x,
-                                                   terrain.heightAt(box.position.x, box.position.z)
-                                                       + game::kAntidoteYOffset + 0.5f,
+                                                   terrain.heightAt(box.position.x, box.position.z) + 0.5f,
                                                    box.position.z);
                         glm::vec4 clip = vp * glm::vec4(boxCentre, 1.0f);
                         const bool behind = clip.w <= 1e-3f;
