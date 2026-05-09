@@ -12,7 +12,7 @@ void Enemy::update(float dt, const glm::vec3& playerPos) {
     dir.y = 0.0f;
     const float d = glm::length(dir);
     if (d > 1e-3f) dir /= d;
-    const float speed = def ? def->moveSpeed : kEnemyMoveSpeed;
+    const float speed = (def ? def->moveSpeed : kEnemyMoveSpeed) * speedMult;
     velocity = dir * speed;
     velocity.y = 0.0f;
     position.x += velocity.x * dt;

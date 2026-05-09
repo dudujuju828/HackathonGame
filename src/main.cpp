@@ -114,6 +114,87 @@ render::AnimationClip buildDogWalk(const render::Skeleton& skel) {
     return clip;
 }
 
+// Procedural walk for the Cat (28-joint skeleton, no shipped animation).
+// Joint indices come from the Cat.glb skeleton dump:
+//   0   _rootJoint
+//   2   shoulder hub (children: spine.3, front legs 6 & 10)
+//   6   front leg L (hip)   / 10 front leg R (hip)
+//  20   hind leg L (hip)    / 24 hind leg R (hip)
+//  14   tail base (longest chain: 14..19)
+render::AnimationClip buildCatWalk(const render::Skeleton& skel) {
+    render::AnimationClip clip;
+    clip.name     = "ProceduralWalk";
+    clip.duration = 0.95f;  // slower stride — feels less frantic
+
+    constexpr float kPi = 3.14159265358979f;
+    const float     T   = clip.duration;
+
+    // Swing a joint around its local X axis around the rest pose.
+    auto addSwing = [&](int jointIdx, float amplitude, float phaseOffset) {
+        if (jointIdx >= static_cast<int>(skel.joints.size())) return;
+        render::AnimationChannel ch;
+        ch.targetJoint = jointIdx;
+        const glm::quat rest = skel.joints[jointIdx].rotation;
+        for (int k = 0; k <= 8; ++k) {
+            float t     = T * (static_cast<float>(k) / 8.0f);
+            float angle = amplitude * std::sin(phaseOffset + (2.0f * kPi / T) * t);
+            ch.rotations.push_back({ t, rest * glm::angleAxis(angle, glm::vec3(1.0f, 0.0f, 0.0f)) });
+        }
+        clip.channels.push_back(std::move(ch));
+    };
+
+    // Diagonal gait: front-L & hind-R together, front-R & hind-L together.
+    addSwing( 6, glm::radians(28.0f), 0.0f);   // front leg
+    addSwing(10, glm::radians(28.0f), kPi);    // front leg (opposite)
+    addSwing(20, glm::radians(32.0f), kPi);    // hind  leg (anti-phase with 6)
+    addSwing(24, glm::radians(32.0f), 0.0f);   // hind  leg (in-phase with 6)
+
+    // Tail base swishes laterally (Z) at stride frequency.
+    {
+        render::AnimationChannel ch;
+        ch.targetJoint = 14;
+        if (14 < static_cast<int>(skel.joints.size())) {
+            const glm::quat rest = skel.joints[14].rotation;
+            for (int k = 0; k <= 8; ++k) {
+                float t   = T * (static_cast<float>(k) / 8.0f);
+                float ang = glm::radians(15.0f) * std::sin((2.0f * kPi / T) * t);
+                ch.rotations.push_back({ t, rest * glm::angleAxis(ang, glm::vec3(0.0f, 0.0f, 1.0f)) });
+            }
+            clip.channels.push_back(std::move(ch));
+        }
+    }
+
+    // Spine hub sways subtly side-to-side.
+    {
+        render::AnimationChannel ch;
+        ch.targetJoint = 2;
+        if (2 < static_cast<int>(skel.joints.size())) {
+            const glm::quat rest = skel.joints[2].rotation;
+            for (int k = 0; k <= 8; ++k) {
+                float t   = T * (static_cast<float>(k) / 8.0f);
+                float ang = glm::radians(4.0f) * std::sin((4.0f * kPi / T) * t);
+                ch.rotations.push_back({ t, rest * glm::angleAxis(ang, glm::vec3(0.0f, 0.0f, 1.0f)) });
+            }
+            clip.channels.push_back(std::move(ch));
+        }
+    }
+
+    // Root vertical bounce at 2x stride frequency.
+    {
+        render::AnimationChannel ch;
+        ch.targetJoint = 0;
+        const glm::vec3 restT = skel.joints[0].translation;
+        for (int k = 0; k <= 8; ++k) {
+            float t = T * (static_cast<float>(k) / 8.0f);
+            float y = 0.04f * std::abs(std::sin((2.0f * kPi / T) * t));
+            ch.translations.push_back({ t, restT + glm::vec3(0.0f, y, 0.0f) });
+        }
+        clip.channels.push_back(std::move(ch));
+    }
+
+    return clip;
+}
+
 void buildCube(std::vector<render::Vertex>& verts, std::vector<uint32_t>& idx) {
     struct Face { glm::vec3 n; glm::vec3 a, b, c, d; };
     const Face faces[6] = {
@@ -218,10 +299,16 @@ int main() {
         if (bulldogModel.skeleton())
             bulldogWalkClip = buildDogWalk(bulldogModel.skeleton().value());
 
-        // Find a named animation clip; returns nullptr if the model has none or name not found.
-        auto findAnim = [](const render::Model& m, const char* name) -> const render::AnimationClip* {
+        // Cat now ships with real animation clips (Cat_Walk, Cat_Run, etc.) —
+        // procedural fallback no longer needed.
+
+        // Find an animation clip by substring match (handles GLBs that
+        // export with long Maya/Unreal-style prefixed names like
+        // "SKM_Cat|SKM_Cat|Cat_Walk"). Returns nullptr only if the model
+        // has no animations at all; otherwise falls back to the first clip.
+        auto findAnim = [](const render::Model& m, const char* needle) -> const render::AnimationClip* {
             for (const auto& clip : m.animations())
-                if (clip.name == name) return &clip;
+                if (clip.name.find(needle) != std::string::npos) return &clip;
             return m.animations().empty() ? nullptr : &m.animations()[0];
         };
 
@@ -236,7 +323,9 @@ int main() {
         const game::EnemyDef enemyDefs[] = {
             { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   8,  0.20f,  2.4f,  12.0f, 1.7f, 0.9f },
             { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,  20,  0.50f,  1.7f,  22.0f, 1.8f, 1.3f },
-            { "Cat",     &catModel,     nullptr,                                0.45f, 0.25f, 1.30f, 8.0f,  0.04f,   0.0f,   0.0f,   0.0f,   2,  0.05f,  3.2f,   6.0f, 1.5f, 0.45f },
+            { "Cat",     &catModel,     findAnim(catModel, "Cat_Walk"),         0.027f, 0.25f, 1.30f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   2,  0.05f,  3.2f,   6.0f, 1.5f, 0.45f,
+              /*aggroAnim=*/findAnim(catModel, "Cat_Run"), /*aggroRange=*/9.0f, /*aggroSpeedMult=*/2.0f,
+              /*deathAnim=*/findAnim(catModel, "Cat_Death") },
             { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.0f,  16.0f, 1.7f, 1.1f },
             { "Chicken", &chickenModel, nullptr,                                4.00f, 0.20f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  2.7f,   7.0f, 1.6f, 0.55f },
         };
@@ -251,12 +340,103 @@ int main() {
             std::fprintf(stderr, "[main] failed to load antidote box model\n");
         }
 
-        render::Model treeModel, tombstoneModel;
+        render::Model treeModel, deadTreeModel, lowPolyDeadTreeModel, tombstoneModel, batModel, lanternModel;
         if (!treeModel.loadFromFile("assets/models/spooky_tree_1.glb")) {
             std::fprintf(stderr, "[main] failed to load tree model\n");
         }
+        if (!deadTreeModel.loadFromFile("assets/models/dead_tree.glb")) {
+            std::fprintf(stderr, "[main] failed to load dead tree model\n");
+        }
+        if (!lowPolyDeadTreeModel.loadFromFile("assets/models/low_poly_dead_tree.glb")) {
+            std::fprintf(stderr, "[main] failed to load low-poly dead tree model\n");
+        }
         if (!tombstoneModel.loadFromFile("assets/models/stylized_tombstones.glb")) {
             std::fprintf(stderr, "[main] failed to load tombstone model\n");
+        }
+        if (!batModel.loadFromFile("assets/models/bat.glb")) {
+            std::fprintf(stderr, "[main] failed to load bat model\n");
+        }
+        if (!lanternModel.loadFromFile("assets/models/old_lantern.glb")) {
+            std::fprintf(stderr, "[main] failed to load lantern model\n");
+        }
+
+        // Atmospheric bats — tight ominous loops over the Graveyard quadrant
+        // plus a few lazy big-radius wanderers across the rest of the sky.
+        // Each bat owns its own Animator so flap animations play out of sync,
+        // making the swarm look organic.
+        struct Bat {
+            glm::vec2 centerXZ;
+            float     orbitRadius;
+            float     orbitSpeed;   // rad/s; negative = counter-clockwise
+            float     altitude;     // metres above world Y=0
+            float     bobAmp;
+            float     bobFreq;      // Hz
+            float     scale;
+            float     anglePhase;   // initial rotation offset
+            float     animOffset;   // seconds; staggers each bat's flap cycle
+            render::Animator animator;
+        };
+        std::vector<Bat> bats;
+        const render::AnimationClip* batFlap = nullptr;
+        if (!batModel.animations().empty()) {
+            batFlap = &batModel.animations()[0];
+        }
+        {
+            std::mt19937 rng(0xBEEFFEEDu);
+            std::uniform_real_distribution<float> u01(0.0f, 1.0f);
+
+            // 4 graveyard bats — tight, fast, low-ish loops over the SE
+            // tombstone area.
+            const glm::vec2 graveCenters[4] = {
+                {  18.0f, -22.0f },
+                {  38.0f, -16.0f },
+                {  28.0f, -42.0f },
+                {  46.0f, -38.0f },
+            };
+            for (int i = 0; i < 4; ++i) {
+                Bat b;
+                b.centerXZ    = graveCenters[i];
+                b.orbitRadius = 4.0f + u01(rng) * 5.0f;        // 4-9 m
+                b.orbitSpeed  = (u01(rng) < 0.5f ? -1.0f : 1.0f)
+                              * (0.9f + u01(rng) * 0.7f);       // 0.9-1.6 rad/s
+                b.altitude    = 7.0f + u01(rng) * 4.0f;         // 7-11 m
+                b.bobAmp      = 0.5f + u01(rng) * 0.6f;
+                b.bobFreq     = 1.0f + u01(rng) * 1.5f;
+                b.scale       = (0.45f + u01(rng) * 0.25f) / 5.0f;
+                b.anglePhase  = u01(rng) * 6.28318530718f;
+                b.animOffset  = u01(rng);
+                b.animator.setAnimation(batFlap, /*loop=*/true);
+                bats.push_back(std::move(b));
+            }
+
+            // 4 wanderer bats — bigger circles across the rest of the map.
+            const glm::vec2 wanderCenters[4] = {
+                { -30.0f,  20.0f },
+                {  10.0f,  35.0f },
+                { -45.0f, -10.0f },
+                {  -5.0f, -10.0f },
+            };
+            for (int i = 0; i < 4; ++i) {
+                Bat b;
+                b.centerXZ    = wanderCenters[i];
+                b.orbitRadius = 12.0f + u01(rng) * 8.0f;        // 12-20 m
+                b.orbitSpeed  = (u01(rng) < 0.5f ? -1.0f : 1.0f)
+                              * (0.4f + u01(rng) * 0.4f);       // 0.4-0.8 rad/s
+                b.altitude    = 12.0f + u01(rng) * 6.0f;        // 12-18 m
+                b.bobAmp      = 0.8f + u01(rng) * 0.7f;
+                b.bobFreq     = 0.6f + u01(rng) * 1.0f;
+                b.scale       = (0.55f + u01(rng) * 0.30f) / 5.0f;
+                b.anglePhase  = u01(rng) * 6.28318530718f;
+                b.animOffset  = u01(rng);
+                b.animator.setAnimation(batFlap, /*loop=*/true);
+                bats.push_back(std::move(b));
+            }
+
+            // Stagger each bat's animation start so the swarm doesn't flap
+            // in lockstep.
+            for (auto& b : bats) {
+                b.animator.update(b.animOffset);
+            }
         }
 
         // Map decorations: deterministic procedural scatter so the layout
@@ -266,6 +446,8 @@ int main() {
             glm::vec3      position;
             float          yawRad;
             float          scale;
+            float          basePitchDeg = 0.0f;  // X-axis fix-up (e.g. -90 for Z-up GLBs)
+            float          baseYawDeg   = 0.0f;  // additional Y-axis fix-up applied after pitch
             render::Model* model;
         };
         std::vector<Decoration> decorations;
@@ -295,6 +477,26 @@ int main() {
                 decorations.push_back(d);
             }
 
+            // ~50 dead trees randomly scattered across the whole map; flips
+            // a coin between the two variants to mix silhouettes.
+            for (int i = 0; i < 50; ++i) {
+                const float x = (u01(rng) * 2.0f - 1.0f) * (half - 6.0f);
+                const float z = (u01(rng) * 2.0f - 1.0f) * (half - 6.0f);
+                if (!safeFromSpawn(x, z)) { --i; continue; }
+                Decoration d;
+                const bool useLowPoly = u01(rng) < 0.5f;
+                d.model = useLowPoly ? &lowPolyDeadTreeModel : &deadTreeModel;
+                // Two models have different native sizes — pick scales by eye.
+                d.scale = useLowPoly
+                    ? (0.13f + u01(rng) * 0.10f)        // low_poly: small native (~3x smaller)
+                    : (0.006f + u01(rng) * 0.004f);     // dead_tree: large native (~3x smaller)
+                d.position = glm::vec3(x,
+                                       terrain.heightAt(x, z) + (useLowPoly ? 0.0f : 0.5f),
+                                       z);
+                d.yawRad   = u01(rng) * 6.28318530718f;
+                decorations.push_back(d);
+            }
+
             // ~25 tombstones, biased into the SE Graveyard quadrant
             // (x in [0, half-6], z in [-(half-6), 0]).
             for (int i = 0; i < 25; ++i) {
@@ -307,6 +509,34 @@ int main() {
                 d.scale    = (0.6f + u01(rng) * 0.5f) / 25.0f;
                 d.model    = &tombstoneModel;
                 decorations.push_back(d);
+            }
+
+            // Old lanterns spaced evenly along all four perimeter walls,
+            // inset slightly so they sit on our side of the wall.
+            constexpr int   kLanternsPerSide = 7;
+            constexpr float kLanternInset    = 2.5f;
+            constexpr float kLanternScale    = 1.2f;
+            const float perimSpan = (half - 6.0f);  // furthest lantern position along an axis
+
+            auto addLantern = [&](float x, float z) {
+                Decoration d;
+                d.position     = glm::vec3(x, terrain.heightAt(x, z), z);
+                d.yawRad       = u01(rng) * 6.28318530718f;
+                d.scale        = kLanternScale;
+                d.basePitchDeg = -90.0f;  // GLB ships Z-up; stand it upright
+                d.baseYawDeg   = 180.0f;  // flip the lantern to face the way it should
+                d.model        = &lanternModel;
+                decorations.push_back(d);
+            };
+
+            for (int i = 0; i < kLanternsPerSide; ++i) {
+                const float t       = -1.0f + 2.0f * static_cast<float>(i)
+                                     / static_cast<float>(kLanternsPerSide - 1);
+                const float varying = t * perimSpan;
+                addLantern( varying,                  half - kLanternInset);  // north (+Z)
+                addLantern( varying,                -(half - kLanternInset)); // south (-Z)
+                addLantern( half - kLanternInset,    varying);                 // east  (+X)
+                addLantern(-(half - kLanternInset),  varying);                 // west  (-X)
             }
         }
 
@@ -340,8 +570,8 @@ int main() {
         enemies.reserve(32);
         game::EnemySpawner spawner;
         spawner.intervalSec    = 2.0f;
-        spawner.spawnMinRadius = 14.0f;  // never closer than this to the player
-        spawner.spawnRadius    = 22.0f;  // upper bound of the random spawn distance
+        spawner.spawnMinRadius = 28.0f;  // ~2x previous so chase-mode enemies have room to ramp up
+        spawner.spawnRadius    = 44.0f;  // upper bound of the random spawn distance
         spawner.setDefs(enemyDefs, static_cast<int>(std::size(enemyDefs)));
 
         // Difficulty scaling: per-wave HP multiplier on spawned enemies so
@@ -900,12 +1130,30 @@ int main() {
             }
 
             for (auto& e : enemies) {
-                if (e.alive() && e.def) {
-                    e.update(dt, player.position());
-                    e.animator.update(dt);
-                    if (e.def->model->skeleton()) {
-                        e.animator.calculateBoneTransforms(&e.def->model->skeleton().value());
+                if (!e.def) continue;
+                if (e.alive()) {
+                    // Aggro check: within def->aggroRange of the player, swap
+                    // to the def's aggroAnim and apply the speed multiplier.
+                    if (e.def->aggroAnim && e.def->aggroRange > 0.0f) {
+                        const float dx = e.position.x - player.position().x;
+                        const float dz = e.position.z - player.position().z;
+                        const bool aggro =
+                            (dx * dx + dz * dz) < (e.def->aggroRange * e.def->aggroRange);
+                        const render::AnimationClip* desired =
+                            aggro ? e.def->aggroAnim : e.def->walkAnim;
+                        if (desired != e.currentAnim) {
+                            e.animator.setAnimation(desired);
+                            e.currentAnim = desired;
+                        }
+                        e.speedMult = aggro ? e.def->aggroSpeedMult : 1.0f;
                     }
+                    e.update(dt, player.position());
+                }
+                // Tick animator + bones every frame so death animations play
+                // out even though hp == 0 (alive() == false).
+                e.animator.update(dt);
+                if (e.def->model->skeleton()) {
+                    e.animator.calculateBoneTransforms(&e.def->model->skeleton().value());
                 }
             }
 
@@ -1164,7 +1412,7 @@ int main() {
             // Helper: rolls a chest drop on enemy death + grants XP. Used by
             // both the direct-hit path and the explosive-AoE path so kills
             // from either route reward identically.
-            auto onEnemyKilled = [&](const game::Enemy& dead) {
+            auto onEnemyKilled = [&](game::Enemy& dead) {
                 player.addXp(game::kEnemyXpReward);
                 const float drop = dead.def ? dead.def->dropChance : game::kChestDropChance;
                 if (game::rand01() < drop) {
@@ -1178,6 +1426,17 @@ int main() {
                     c.cyclePhase = 1.0f;
                     c.animator.setAnimation(chestOpenAnim, /*loop=*/false);
                     chests.push_back(c);
+                }
+                // Death animation: linger as a corpse for the clip's duration,
+                // playing the death anim once. The cull pass below keeps the
+                // entity around until deathTimer >= deathDuration.
+                if (dead.def && dead.def->deathAnim) {
+                    dead.dying         = true;
+                    dead.deathTimer    = 0.0f;
+                    dead.deathDuration = dead.def->deathAnim->duration;
+                    dead.animator.setAnimation(dead.def->deathAnim, /*loop=*/false);
+                    dead.currentAnim   = dead.def->deathAnim;
+                    dead.speedMult     = 0.0f;  // freeze in place
                 }
             };
 
@@ -1369,10 +1628,18 @@ int main() {
                 }
             }
 
-            // Cull dead enemies.
+            // Tick the death-animation timer for dying enemies.
+            for (auto& e : enemies) {
+                if (e.dying) e.deathTimer += dt;
+            }
+            // Cull: dead AND not in the middle of a death-anim window.
             enemies.erase(
                 std::remove_if(enemies.begin(), enemies.end(),
-                               [](const game::Enemy& e){ return !e.alive(); }),
+                    [](const game::Enemy& e) {
+                        if (e.alive()) return false;
+                        if (e.dying && e.deathTimer < e.deathDuration) return false;
+                        return true;
+                    }),
                 enemies.end());
 
             // Re-cull projectiles that died from a hit.
@@ -1405,6 +1672,15 @@ int main() {
                 std::remove_if(chests.begin(), chests.end(),
                     [](const game::Chest& c){ return c.state == game::ChestState::Done; }),
                 chests.end());
+
+            // Tick the bats' flap animations every frame (regardless of scene
+            // so they keep flying behind menus/loot popups/etc).
+            if (batModel.skeleton()) {
+                for (auto& b : bats) {
+                    b.animator.update(dt);
+                    b.animator.calculateBoneTransforms(&batModel.skeleton().value());
+                }
+            }
 
             // Tick loot toasts (always, regardless of scene) and cull the
             // ones whose lifetime has elapsed.
@@ -1519,6 +1795,14 @@ int main() {
                     glm::mat4 M(1.0f);
                     M = glm::translate(M, d.position);
                     M = glm::rotate(M, d.yawRad, glm::vec3(0.0f, 1.0f, 0.0f));
+                    if (d.basePitchDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(d.basePitchDeg),
+                                        glm::vec3(1.0f, 0.0f, 0.0f));
+                    }
+                    if (d.baseYawDeg != 0.0f) {
+                        M = glm::rotate(M, glm::radians(d.baseYawDeg),
+                                        glm::vec3(0.0f, 1.0f, 0.0f));
+                    }
                     M = glm::scale(M, glm::vec3(d.scale));
                     worldShader.setMat4("uModel", M);
                     for (const auto& sub : d.model->meshes()) {
@@ -1526,6 +1810,63 @@ int main() {
                         sub.mesh.draw();
                     }
                 }
+                if (cullWas) glEnable(GL_CULL_FACE);
+                checker.bind(0);
+            }
+
+            // Bats — circling in the sky over the map. Position from time +
+            // per-bat orbit params; yaw aligned to the tangent direction so
+            // they look like they're flying. Skeletal flap animation plays
+            // per-bat with a stagger so the swarm doesn't sync.
+            if (!bats.empty()) {
+                GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
+                glDisable(GL_CULL_FACE);
+                const bool hasBones = batModel.skeleton().has_value();
+                worldShader.setInt("uHasBones", hasBones ? 1 : 0);
+                worldShader.setVec3("uTint", glm::vec3(1.0f));
+                const float t = time.total();
+                for (const auto& b : bats) {
+                    const float a  = b.anglePhase + t * b.orbitSpeed;
+                    const float bx = b.centerXZ.x + std::cos(a) * b.orbitRadius;
+                    const float bz = b.centerXZ.y + std::sin(a) * b.orbitRadius;
+                    const float by = b.altitude
+                                    + std::sin(t * b.bobFreq * 6.28318530718f
+                                               + b.anglePhase) * b.bobAmp;
+
+                    // Tangent direction (derivative of cos/sin around the orbit).
+                    // Sign of orbitSpeed flips the facing for CCW vs CW.
+                    const float tdx = -std::sin(a) * b.orbitSpeed;
+                    const float tdz =  std::cos(a) * b.orbitSpeed;
+                    const float yaw = std::atan2(tdx, tdz);
+
+                    glm::mat4 M(1.0f);
+                    M = glm::translate(M, glm::vec3(bx, by, bz));
+                    M = glm::rotate(M, yaw, glm::vec3(0.0f, 1.0f, 0.0f));
+                    // Final orientation chain (vertex order, right to left):
+                    //   X(90)  pitch the standing model into horizontal flight
+                    //   Y(-90) swing the head into the chase direction
+                    //   Z(180) roll 180 around the now-forward axis to flip
+                    //          the bat right-side-up
+                    M = glm::rotate(M, glm::radians( 180.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+                    M = glm::rotate(M, glm::radians( -90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                    M = glm::rotate(M, glm::radians(  90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                    M = glm::scale(M, glm::vec3(b.scale));
+                    worldShader.setMat4("uModel", M);
+
+                    if (hasBones) {
+                        const auto& matrices = b.animator.finalBoneMatrices();
+                        for (size_t i = 0; i < matrices.size() && i < 200; ++i) {
+                            char buf[32];
+                            std::snprintf(buf, sizeof(buf), "uBones[%zu]", i);
+                            worldShader.setMat4(buf, matrices[i]);
+                        }
+                    }
+                    for (const auto& sub : batModel.meshes()) {
+                        if (sub.diffuse) sub.diffuse->bind(0);
+                        sub.mesh.draw();
+                    }
+                }
+                worldShader.setInt("uHasBones", 0);
                 if (cullWas) glEnable(GL_CULL_FACE);
                 checker.bind(0);
             }
@@ -1557,8 +1898,16 @@ int main() {
             }
 
             // Enemies: track the active def to avoid redundant shader state changes
-            // when consecutive enemies share a type.
+            // when consecutive enemies share a type. Cull is disabled for the
+            // pass because some GLBs ship doubleSided materials or have one
+            // mirrored side with inverted winding (e.g. Cat) — culling would
+            // erase the back-facing half of those meshes.
             if (!enemies.empty()) {
+                GLboolean enemyCullWas  = glIsEnabled(GL_CULL_FACE);
+                GLboolean enemyBlendWas = glIsEnabled(GL_BLEND);
+                glDisable(GL_CULL_FACE);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 worldShader.setVec3("uTint", glm::vec3(1.0f));
                 const game::EnemyDef* activeDef = nullptr;
 
@@ -1618,9 +1967,18 @@ int main() {
                     M = glm::scale(M, glm::vec3(activeDef->scale));
                     worldShader.setMat4("uModel", M);
 
+                    // Death-fade alpha: 1.0 for the first half of the death
+                    // animation, then linearly to 0 across the second half.
+                    float alpha = 1.0f;
+                    if (e.dying && e.deathDuration > 0.0f) {
+                        const float frac = std::clamp(e.deathTimer / e.deathDuration, 0.0f, 1.0f);
+                        if (frac > 0.5f) alpha = 1.0f - (frac - 0.5f) * 2.0f;
+                    }
+                    worldShader.setFloat("uAlpha", alpha);
+
                     if (activeDef->model->skeleton()) {
                         const auto& matrices = e.animator.finalBoneMatrices();
-                        for (size_t i = 0; i < matrices.size() && i < 100; ++i) {
+                        for (size_t i = 0; i < matrices.size() && i < 200; ++i) {
                             char buf[32];
                             std::snprintf(buf, sizeof(buf), "uBones[%zu]", i);
                             worldShader.setMat4(buf, matrices[i]);
@@ -1632,7 +1990,10 @@ int main() {
                         sub.mesh.draw();
                     }
                 }
-                worldShader.setInt("uHasBones", 0);
+                worldShader.setInt  ("uHasBones", 0);
+                worldShader.setFloat("uAlpha",    1.0f);  // restore default for following passes
+                if (!enemyBlendWas) glDisable(GL_BLEND);
+                if (enemyCullWas)   glEnable(GL_CULL_FACE);
             }
 
             // Chests on the ground.
@@ -1661,7 +2022,7 @@ int main() {
                     worldShader.setInt("uHasBones", useBones ? 1 : 0);
                     if (useBones) {
                         const auto& matrices = c.animator.finalBoneMatrices();
-                        for (size_t i = 0; i < matrices.size() && i < 100; ++i) {
+                        for (size_t i = 0; i < matrices.size() && i < 200; ++i) {
                             char buf[32];
                             std::snprintf(buf, sizeof(buf), "uBones[%zu]", i);
                             worldShader.setMat4(buf, matrices[i]);

@@ -20,6 +20,15 @@ bool Weapon::update(float dt, const core::Input& input, Player& player) {
     cooldown_ = std::max(0.0f, cooldown_ - dt);
     kickback_ = std::max(0.0f, kickback_ - kickDecay_ * dt);
 
+    // Walking bob — phase advances with horizontal speed (steps per metre),
+    // intensity smooths in/out so transitions don't pop.
+    const glm::vec3 v = player.velocity();
+    const float speedXZ = std::sqrt(v.x * v.x + v.z * v.z);
+    bobPhase_ += speedXZ * 0.35f * dt;       // matches Player's bobStepRate
+    if (bobPhase_ > 1e6f) bobPhase_ = std::fmod(bobPhase_, 1.0f);
+    const float target = (speedXZ > 0.05f) ? 1.0f : 0.0f;
+    bobIntensity_ = glm::mix(bobIntensity_, target, std::min(8.0f * dt, 1.0f));
+
     // Handle ongoing burst.
     if (burstRemaining_ > 0) {
         burstTimer_ -= dt;
@@ -67,12 +76,20 @@ glm::mat4 Weapon::worldMatrix_(const render::Camera& cam) const {
 
     const float k = kickback_;
 
+    // Walk bob: vertical sin at step rate, in/out cosine at half rate so
+    // the syringe drifts forward/back over the step cadence.
+    constexpr float kTwoPi   = 6.28318530718f;
+    constexpr float kBobAmpY = 0.022f;  // metres
+    constexpr float kBobAmpZ = 0.030f;  // metres
+    const float bobY =  std::sin(bobPhase_ * kTwoPi)        * kBobAmpY * bobIntensity_;
+    const float bobZ =  std::sin(bobPhase_ * kTwoPi * 0.5f) * kBobAmpZ * bobIntensity_;
+
     // View-space: +X right, +Y up, -Z forward (into scene). The user-facing
     // offset.z is "distance in front", flipped to view-space here.
     const glm::vec3 viewOffset(
         viewmodel.offset.x,
-        viewmodel.offset.y + k * 0.025f,           // small upward thrust
-        -(viewmodel.offset.z + k * 0.10f)          // syringe stabs forward
+        viewmodel.offset.y + k * 0.025f + bobY,             // small upward thrust + bob
+        -(viewmodel.offset.z + k * 0.10f + bobZ)            // stab forward + in/out drift
     );
 
     glm::mat4 local(1.0f);

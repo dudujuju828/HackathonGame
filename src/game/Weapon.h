@@ -13,7 +13,9 @@ class Player;
 // offset is (right, up, forward-distance) in metres relative to the camera.
 struct ViewmodelTransform {
     glm::vec3 offset   { 0.28f, -0.22f, 0.55f };
-    glm::vec3 rotation { 0.0f, -8.0f, 0.0f };  // pitch, yaw, roll (deg)
+    // Doctor-style neutral grip: ~30 deg roll on Z so the syringe leans
+    // inward toward the camera, slight yaw inward.
+    glm::vec3 rotation { 0.0f, -8.0f, 30.0f };  // pitch, yaw, roll (deg)
     float     scale    = 0.30f;
 };
 
@@ -62,6 +64,12 @@ private:
 
     int   burstRemaining_ = 0;
     float burstTimer_     = 0.0f;
+
+    // Walking bob — phase advances with player horizontal speed; intensity
+    // smooths in/out so stopping doesn't snap. Drives small Y + Z offsets
+    // on the held viewmodel.
+    float bobPhase_     = 0.0f;
+    float bobIntensity_ = 0.0f;
 };
 
 }  // namespace game

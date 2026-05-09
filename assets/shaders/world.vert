@@ -8,7 +8,9 @@ layout(location = 4) in vec4 aBoneWeights;
 uniform mat4 uModel;
 uniform mat4 uViewProj;
 
-const int MAX_BONES = 100;
+// Bumped from 100 — Cat.glb has a 175-joint rig; out-of-range vertex
+// boneIds against a too-small array read garbage and collapse vertices.
+const int MAX_BONES = 200;
 uniform mat4 uBones[MAX_BONES];
 uniform bool uHasBones;
 

@@ -325,14 +325,10 @@ bool Model::loadGLB_(const std::string& path) {
             ModelMesh mm;
             mm.mesh.upload(verts, indices);
 
-            if (prim.material && prim.material->has_pbr_metallic_roughness) {
-                const auto& pbr = prim.material->pbr_metallic_roughness;
-                mm.diffuseColor = glm::vec3(pbr.base_color_factor[0],
-                                            pbr.base_color_factor[1],
-                                            pbr.base_color_factor[2]);
-                if (pbr.base_color_texture.texture &&
-                    pbr.base_color_texture.texture->image) {
-                    const cgltf_image* img = pbr.base_color_texture.texture->image;
+            if (prim.material) {
+                // Helper: cache + load a glTF image into a Texture.
+                auto bindImage = [&](const cgltf_image* img) {
+                    if (!img) return;
                     auto it = texCache.find(img);
                     if (it != texCache.end()) {
                         mm.diffuse = it->second;
@@ -341,6 +337,27 @@ bool Model::loadGLB_(const std::string& path) {
                         mm.diffuse = tex;
                         texCache.emplace(img, tex);
                     }
+                };
+
+                if (prim.material->has_pbr_metallic_roughness) {
+                    const auto& pbr = prim.material->pbr_metallic_roughness;
+                    mm.diffuseColor = glm::vec3(pbr.base_color_factor[0],
+                                                pbr.base_color_factor[1],
+                                                pbr.base_color_factor[2]);
+                    if (pbr.base_color_texture.texture)
+                        bindImage(pbr.base_color_texture.texture->image);
+                }
+
+                // Some GLBs (older Maya/Unreal exports) only ship the
+                // deprecated KHR_materials_pbrSpecularGlossiness extension —
+                // fall back to its diffuse texture when PBR didn't supply one.
+                if (!mm.diffuse && prim.material->has_pbr_specular_glossiness) {
+                    const auto& sg = prim.material->pbr_specular_glossiness;
+                    mm.diffuseColor = glm::vec3(sg.diffuse_factor[0],
+                                                sg.diffuse_factor[1],
+                                                sg.diffuse_factor[2]);
+                    if (sg.diffuse_texture.texture)
+                        bindImage(sg.diffuse_texture.texture->image);
                 }
             }
 

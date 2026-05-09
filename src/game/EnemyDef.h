@@ -27,6 +27,17 @@ struct EnemyDef {
     float damage        = 5.0f;   // hp dealt to player per hit
     float attackRange   = 1.6f;   // metres — must be within this to land a hit
     float attackInterval = 1.0f;  // seconds between this enemy's hits
+
+    // Aggro mode: when the player is within aggroRange, swap to aggroAnim
+    // and multiply moveSpeed by aggroSpeedMult. nullptr disables (default).
+    const render::AnimationClip* aggroAnim = nullptr;
+    float aggroRange     = 0.0f;  // metres
+    float aggroSpeedMult = 1.0f;  // multiplier on moveSpeed in aggro
+
+    // Death animation. When set, the enemy plays this clip on death and
+    // fades from 1.0 to 0.0 alpha across its second half before being
+    // culled. nullptr = legacy behaviour (instant removal on death).
+    const render::AnimationClip* deathAnim = nullptr;
 };
 
 } // namespace game
