@@ -192,11 +192,10 @@ void JournalScreen::draw(render::Hud& hud, render::Text& text, int W, int H) con
     const float cx = panelX + kInset;
     float y = panelY + 22.0f;
 
-    // Title: Species — Disease
+    // Title: Disease name only
     {
-        const std::string title = e.species + " - " + e.disease;
-        const float tw = render::Text::measure(title) * kTitleScale;
-        text.draw(W, H, panelX + (kPanelW - tw) * 0.5f, y, title, kTitleScale, titleColor);
+        const float tw = render::Text::measure(e.disease) * kTitleScale;
+        text.draw(W, H, panelX + (kPanelW - tw) * 0.5f, y, e.disease, kTitleScale, titleColor);
         y += 12.0f * kTitleScale + 14.0f;
     }
 
@@ -222,9 +221,10 @@ void JournalScreen::draw(render::Hud& hud, render::Text& text, int W, int H) con
         y += 12.0f;
     };
 
-    drawSection("SYMPTOMS",    e.symptoms);
-    drawSection("DESCRIPTION", e.description);
-    drawSection("TREATMENT",   e.treatment);
+    drawSection("SYMPTOMS",         e.symptoms);
+    drawSection("DESCRIPTION",      e.description);
+    drawSection("TREATMENT",        e.treatment);
+    drawSection("SPECIES AFFECTED", e.species);
 
     // Navigation row.
     const float navY  = panelY + kPanelH - 54.0f;
