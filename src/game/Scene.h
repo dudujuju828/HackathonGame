@@ -8,6 +8,7 @@ enum class Scene {
     LevelUp,
     Inventory,
     Loot,       // chest opened, popup awaiting click-to-continue
+    GameOver,   // player died — shows restart screen
 };
 
 }  // namespace game

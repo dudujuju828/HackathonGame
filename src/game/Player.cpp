@@ -29,6 +29,21 @@ void Player::setSpawn(const glm::vec3& feet) {
     camera_.viewShakePitch = 0.0f;
 }
 
+void Player::restart() {
+    health      = 100.0f;
+    maxHealth   = 100.0f;
+    damage      = 10.0f;
+    attackSpeed = 2.0f;
+    stamina     = 20.0f;
+    maxStamina  = 20.0f;
+    inventory_.clear();
+    level_           = 1;
+    xp_              = 0;
+    xpToNext_        = 100;
+    pendingLevelUps_ = 0;
+    setSpawn({ 0.0f, 0.0f, 3.0f });
+}
+
 void Player::addTrauma(float a) {
     trauma_ = std::clamp(trauma_ + a, 0.0f, 1.0f);
 }

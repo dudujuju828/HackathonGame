@@ -286,7 +286,8 @@ int main() {
         float ringCooldown = 0.0f;
 
         std::vector<game::ItemInstance> pendingLoot;
-        bool prevLootClick = false;
+        bool prevLootClick    = false;
+        bool prevRestartKey   = false;
 
         // Orbital syringes: state for OrbitalRing item. cooldowns_[i] gates how
         // often syringe i can damage. Resized lazily as the player gains rings.
@@ -584,18 +585,12 @@ int main() {
                 }
             }
 
-            // Player death — full reset: HP, position, items, enemies, chests,
-            // wave 1. Keeps the game playable without a separate game-over UI.
+            // Player death — switch to GameOver screen.
             if (player.health <= 0.0f) {
-                player.health = player.maxHealth;
-                player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
-                enemies.clear();
-                chests.clear();
-                antidoteBoxes.clear();
-                antidoteSpawnedForWave = -1;
-                projectiles.clear();
-                pendingLoot.clear();
-                waveManager.reset();
+                player.health = 0.0f;
+                scene = game::Scene::GameOver;
+                glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                input.resetMouseDelta();
             }
 
             // Auto-fire ring: cooldown driven by stacked ring count. Every
@@ -837,6 +832,30 @@ int main() {
                         glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                         input.resetMouseDelta();
                     }
+                }
+            }
+
+            // GameOver: R key (or Enter) restarts everything from scratch.
+            if (scene == game::Scene::GameOver) {
+                const bool curR = input.key(GLFW_KEY_R) || input.key(GLFW_KEY_ENTER);
+                const bool justPressed = curR && !prevRestartKey;
+                prevRestartKey = curR;
+                if (justPressed) {
+                    player.restart();
+                    player.setSpawn({ 0.0f, terrain.heightAt(0.0f, 3.0f), 3.0f });
+                    enemies.clear();
+                    chests.clear();
+                    antidoteBoxes.clear();
+                    antidoteSpawnedForWave = -1;
+                    projectiles.clear();
+                    pendingLoot.clear();
+                    orbitalCooldowns.clear();
+                    orbitalAngle = 0.0f;
+                    ringCooldown = 0.0f;
+                    waveManager.reset();
+                    scene = game::Scene::Playing;
+                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    input.resetMouseDelta();
                 }
             }
 
@@ -1371,6 +1390,52 @@ int main() {
                                   panelY + panelH - 32.0f, hint, sc,
                                   glm::vec4(0.65f, 0.55f, 0.55f, 1.0f));
                     }
+                }
+            } else if (scene == game::Scene::GameOver) {
+                const int W = window.width();
+                const int H = window.height();
+
+                // Full-screen dark overlay.
+                hud.drawRect(W, H, glm::vec2(0, 0),
+                             glm::vec2(static_cast<float>(W), static_cast<float>(H)),
+                             glm::vec3(0.04f, 0.0f, 0.0f), 0.82f);
+
+                // Panel.
+                const float panelW = 520.0f;
+                const float panelH = 240.0f;
+                const float panelX = W * 0.5f - panelW * 0.5f;
+                const float panelY = H * 0.5f - panelH * 0.5f;
+                const glm::vec3 panelCol { 0.08f, 0.02f, 0.02f };
+                const glm::vec3 borderCol { 0.75f, 0.12f, 0.10f };
+                hud.drawProgress(W, H, glm::vec2(panelX, panelY),
+                                 glm::vec2(panelW, panelH),
+                                 1.0f, panelCol, panelCol, borderCol, 2.5f, 0.96f);
+
+                {
+                    const std::string title = "GAME OVER";
+                    const float sc = 5.0f;
+                    const float w  = render::Text::measure(title) * sc;
+                    text.draw(W, H, panelX + (panelW - w) * 0.5f,
+                              panelY + 36.0f, title, sc,
+                              glm::vec4(0.95f, 0.18f, 0.15f, 1.0f));
+                }
+                {
+                    const std::string wave = "Wave " +
+                        std::to_string(waveManager.currentWaveIndex() + 1) +
+                        " of " + std::to_string(waveManager.totalWaves());
+                    const float sc = 1.8f;
+                    const float w  = render::Text::measure(wave) * sc;
+                    text.draw(W, H, panelX + (panelW - w) * 0.5f,
+                              panelY + 130.0f, wave, sc,
+                              glm::vec4(0.75f, 0.60f, 0.58f, 1.0f));
+                }
+                {
+                    const std::string hint = "PRESS R TO RESTART";
+                    const float sc = 2.0f;
+                    const float w  = render::Text::measure(hint) * sc;
+                    text.draw(W, H, panelX + (panelW - w) * 0.5f,
+                              panelY + panelH - 44.0f, hint, sc,
+                              glm::vec4(0.80f, 0.70f, 0.68f, 1.0f));
                 }
             } else if (scene == game::Scene::Inventory) {
                 game::PlayerStats ps;

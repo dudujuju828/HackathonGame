@@ -70,6 +70,9 @@ public:
     void grantItem(const ItemInstance& item) { inventory_.push_back(item); }
     const std::vector<ItemInstance>& inventory() const { return inventory_; }
     int  countItem(ItemId id) const;
+
+    // Full reset to initial state — called on game-over restart.
+    void restart();
     // Per-second auto-fire rate from all stacked AutoSyringeRings.
     float autoRingRate() const;
 
