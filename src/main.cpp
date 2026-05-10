@@ -1548,6 +1548,40 @@ int main() {
                         if (!e.alive()) {
                             onEnemyKilled(e);
                         }
+
+                        // Blood spatter on every syringe hit. Particles are
+                        // additively blended so multiple overlapping reds
+                        // brighten toward pink — keep the burst small and
+                        // dim each particle so impacts read as deep red
+                        // splash rather than glow.
+                        {
+                            const int kDropCount = 22;
+                            for (int i = 0; i < kDropCount; ++i) {
+                                const float az = game::rand01() * 6.28318530718f;
+                                // Bias elevation downward so most droplets
+                                // spray sideways/down (gravity proxy — the
+                                // particle system has no real gravity).
+                                const float el = (game::rand01() * 0.9f) - 0.4f;  // -0.4..0.5 rad
+                                const float spd = 2.0f + game::rand01() * 3.0f;
+                                const glm::vec3 vel(std::cos(az) * std::cos(el) * spd,
+                                                    std::sin(el) * spd - 0.6f,  // extra downward drag
+                                                    std::sin(az) * std::cos(el) * spd);
+                                const float t = game::rand01();
+                                render::Particle pp;
+                                pp.position = impact;
+                                pp.velocity = vel;
+                                // Deep red gradient: arterial at the core,
+                                // darker venous on the periphery.
+                                pp.color = glm::vec4(0.55f + t * 0.30f,
+                                                     0.00f + t * 0.05f,
+                                                     0.00f + t * 0.03f,
+                                                     0.65f);
+                                pp.life = 0.40f + game::rand01() * 0.25f;
+                                pp.age  = 0.0f;
+                                pp.size = 8.0f + game::rand01() * 6.0f;
+                                particles.emit(pp);
+                            }
+                        }
                         // Explosive auto: AoE damage + bright red-orange burst
                         // particle puff at impact. The directly-hit enemy
                         // already took the base 1 dmg above; AoE pass skips
