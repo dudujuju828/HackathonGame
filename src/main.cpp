@@ -253,6 +253,11 @@ int main() {
             std::fprintf(stderr, "[main] audio init failed — continuing silent\n");
         }
         audio.loadSound("footsteps", "assets/audio/footsteps_crunch.mp3", /*looping=*/true);
+        audio.loadSound("ambient",   "assets/audio/ambient_static.mp3",   /*looping=*/true);
+        // Bias the static a touch higher than the source recording so the
+        // crackle reads as signal interference rather than rumble.
+        audio.setPitch ("ambient", 1.25f);
+        audio.setVolume("ambient", 0.55f);
 
         // Footstep loop: smooth a 0..1 envelope toward 1 while moving on the
         // ground. The clip is ~6 s of continuous crunching; we don't restart
@@ -964,11 +969,15 @@ int main() {
             } else if (scene == game::Scene::Journal) {
                 journalScreen.update(input, window.width(), window.height());
             }
-            // Hard-stop footsteps when the player isn't actually moving
-            // through the world (any non-Playing scene).
-            if (scene != game::Scene::Playing) {
+            // Hard-stop loops when the player isn't actually moving through
+            // the world (any non-Playing scene). Ambient runs whenever
+            // Playing is active so the crackle ducks under the menus.
+            if (scene == game::Scene::Playing) {
+                audio.start("ambient");
+            } else {
                 footstepGain = 0.0f;
                 audio.stop("footsteps");
+                audio.stop("ambient");
             }
             journalScreen.tickToast(dt);
 
