@@ -254,10 +254,15 @@ int main() {
         }
         audio.loadSound("footsteps", "assets/audio/footsteps_crunch.mp3", /*looping=*/true);
         audio.loadSound("ambient",   "assets/audio/ambient_static.mp3",   /*looping=*/true);
+        audio.loadSound("ambient2",  "assets/audio/ambient_layer.mp3",    /*looping=*/true);
         // Bias the static a touch higher than the source recording so the
         // crackle reads as signal interference rather than rumble.
-        audio.setPitch ("ambient", 1.25f);
-        audio.setVolume("ambient", 0.55f);
+        audio.setPitch ("ambient",  1.25f);
+        audio.setVolume("ambient",  0.55f);
+        // Second layer sits underneath the static at neutral pitch so the
+        // two textures interact rather than fight.
+        audio.setPitch ("ambient2", 1.0f);
+        audio.setVolume("ambient2", 0.45f);
 
         // Footstep loop: smooth a 0..1 envelope toward 1 while moving on the
         // ground. The clip is ~6 s of continuous crunching; we don't restart
@@ -974,10 +979,12 @@ int main() {
             // Playing is active so the crackle ducks under the menus.
             if (scene == game::Scene::Playing) {
                 audio.start("ambient");
+                audio.start("ambient2");
             } else {
                 footstepGain = 0.0f;
                 audio.stop("footsteps");
                 audio.stop("ambient");
+                audio.stop("ambient2");
             }
             journalScreen.tickToast(dt);
 
