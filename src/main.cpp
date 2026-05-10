@@ -1251,18 +1251,35 @@ int main() {
                 }
             }
 
-            // Stuck syringes follow their host enemy. Linear scan keyed by
-            // enemy id is fine — both lists are small. If the host has been
-            // culled (death animation finished) the projectile keeps its
-            // last position and ages out normally.
-            if (!projectiles.empty() && !enemies.empty()) {
+            // Stuck syringes follow their host enemy and inherit its
+            // death-fade alpha. If the host has already been culled, the
+            // syringe ramps to 0 over ~0.5 s so it doesn't pop out of
+            // the world abruptly.
+            if (!projectiles.empty()) {
                 for (auto& p : projectiles) {
                     if (!p.stuck()) continue;
+                    const game::Enemy* host = nullptr;
                     for (const auto& e : enemies) {
-                        if (e.id == p.stuckEnemyId) {
-                            p.position = e.position + p.stuckOffset;
-                            break;
+                        if (e.id == p.stuckEnemyId) { host = &e; break; }
+                    }
+                    if (host) {
+                        p.position = host->position + p.stuckOffset;
+                        // Match the enemy draw pass's death-fade formula:
+                        // alpha holds at 1.0 for the first half of the
+                        // death anim, then ramps to 0 in the second half.
+                        float alpha = 1.0f;
+                        if (host->dying && host->deathDuration > 0.0f) {
+                            const float frac = std::clamp(
+                                host->deathTimer / host->deathDuration, 0.0f, 1.0f);
+                            if (frac > 0.5f) alpha = 1.0f - (frac - 0.5f) * 2.0f;
                         }
+                        p.fadeAlpha = alpha;
+                    } else {
+                        // Host got culled mid-linger. Fade out fast.
+                        p.fadeAlpha = std::max(0.0f, p.fadeAlpha - 2.0f * dt);
+                        // Shorten remaining lifetime so we don't keep a
+                        // fully-transparent stub around.
+                        if (p.fadeAlpha <= 0.0f) p.age = p.maxAge;
                     }
                 }
             }
@@ -2256,9 +2273,14 @@ int main() {
             }
 
             // In-flight projectiles (depth-tested against the world).
+            // Blending enabled for the pass so stuck syringes can fade
+            // alongside their dying host enemy.
             if (!projectiles.empty()) {
-                GLboolean cullWas = glIsEnabled(GL_CULL_FACE);
+                GLboolean cullWas  = glIsEnabled(GL_CULL_FACE);
+                GLboolean blendWas = glIsEnabled(GL_BLEND);
                 glDisable(GL_CULL_FACE);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 for (const auto& p : projectiles) {
                     glm::vec3 vfwd;
                     if (glm::length(p.velocity) > 1e-4f) {
@@ -2285,6 +2307,7 @@ int main() {
                     M = glm::scale(M, glm::vec3(p.scale * shrinkMul));
 
                     worldShader.setMat4("uModel", M);
+                    worldShader.setFloat("uAlpha", p.fadeAlpha);
                     // Lightning shots glow bright cyan-blue while in flight;
                     // others render with the default white tint.
                     if (p.lightningDamage > 0) {
@@ -2298,7 +2321,9 @@ int main() {
                         worldShader.setVec3("uTint", glm::vec3(1.0f));
                     }
                 }
-                if (cullWas) glEnable(GL_CULL_FACE);
+                worldShader.setFloat("uAlpha", 1.0f);  // restore default
+                if (!blendWas) glDisable(GL_BLEND);
+                if (cullWas)   glEnable(GL_CULL_FACE);
             }
 
             // Orbital syringes: drawn at deterministic positions around the

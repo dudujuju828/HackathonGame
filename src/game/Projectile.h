@@ -22,6 +22,10 @@ struct Projectile {
     // model still orients along the way it came in.
     uint32_t  stuckEnemyId = 0;
     glm::vec3 stuckOffset  { 0.0f };
+    // Multiplied into uAlpha at draw time. Stuck-follow drives this so
+    // syringes track the host enemy's death-fade and ramp out fast if
+    // the host gets culled before the linger expires.
+    float     fadeAlpha    = 1.0f;
 
     bool alive() const { return age < maxAge; }
     bool stuck() const { return stuckEnemyId != 0; }
