@@ -8,6 +8,7 @@ namespace game {
 struct Settings {
     float hFovDeg       = 116.0f;  // horizontal FOV (deg)
     float flashlightDeg = 65.0f;   // flashlight outer-cone half-angle (deg)
+    float masterVolume  = 70.0f;   // 0..100 percent; divide by 100 at audio apply
     bool  fullscreen    = false;
     int   mapIndex      = 0;
 

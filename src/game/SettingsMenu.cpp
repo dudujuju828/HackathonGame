@@ -15,7 +15,7 @@ namespace game {
 
 namespace {
 constexpr float kPanelW       = 540.0f;
-constexpr float kPanelH       = 460.0f;
+constexpr float kPanelH       = 520.0f;
 constexpr float kTrackHalfW   = 250.0f;
 constexpr float kTrackThick   =   8.0f;
 constexpr float kTrackHitPad  =  12.0f;
@@ -44,16 +44,23 @@ void SettingsMenu::buildItems_(std::vector<Item>& out) {
     s2.yOffsetPx = 180.0f;
     out.push_back(s2);
 
+    Item s3{};
+    s3.kind = Item::Kind::Slider; s3.label = "VOLUME";
+    s3.sliderValue = &settings_.masterVolume;
+    s3.sliderMin = 0.0f; s3.sliderMax = 100.0f;
+    s3.yOffsetPx = 260.0f;
+    out.push_back(s3);
+
     Item t{};
     t.kind = Item::Kind::Toggle; t.label = "FULLSCREEN";
     t.toggleValue = &settings_.fullscreen;
-    t.yOffsetPx = 260.0f;
+    t.yOffsetPx = 340.0f;
     out.push_back(t);
 
     Item b{};
     b.kind = Item::Kind::Button; b.label = "EXIT GAME";
     b.action = MenuAction::ExitGame;
-    b.yOffsetPx = 330.0f;
+    b.yOffsetPx = 410.0f;
     out.push_back(b);
 }
 

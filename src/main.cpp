@@ -1,3 +1,4 @@
+#include "audio/Audio.h"
 #include "core/Input.h"
 #include "core/Time.h"
 #include "core/Window.h"
@@ -246,6 +247,18 @@ int main() {
         core::Input  input;
         core::Time   time;
         input.attach(window.handle());
+
+        audio::Audio audio;
+        if (!audio.init()) {
+            std::fprintf(stderr, "[main] audio init failed — continuing silent\n");
+        }
+        audio.loadSound("footsteps", "assets/audio/footsteps_crunch.mp3", /*looping=*/true);
+
+        // Footstep loop: smooth a 0..1 envelope toward 1 while moving on the
+        // ground. The clip is ~6 s of continuous crunching; we don't restart
+        // it per-step — we just gate gain by motion and bend pitch a little
+        // when sprinting so the cadence inside the clip keeps up.
+        float footstepGain = 0.0f;
 
         render::Shader worldShader;
         if (!worldShader.loadFromFiles("assets/shaders/world.vert",
@@ -861,6 +874,9 @@ int main() {
                 player.camera().fovDeg = glm::degrees(vFovRad);
             }
 
+            // Master volume: settings stores 0..100, miniaudio wants 0..1.
+            audio.setMasterVolume(settingsMenu.settings().masterVolume * 0.01f);
+
             if (scene == game::Scene::StartMenu) {
                 if (startMenu.update(input, window.width(), window.height())) {
                     scene = game::Scene::Playing;
@@ -882,6 +898,29 @@ int main() {
                     player.clampXZ(-bound, bound, -bound, bound);
                     weapon.fireRate = 1.0f / player.attackSpeed;
                     weapon.update(dt, input, player);
+
+                    // Footsteps: gate gain by horizontal speed; pitch up
+                    // toward sprint speed so the clip cadence keeps up.
+                    {
+                        const glm::vec3 v = player.velocity();
+                        const float speedXZ  = std::sqrt(v.x * v.x + v.z * v.z);
+                        const float walk     = player.feel().moveSpeed;
+                        const float sprint   = walk * player.feel().sprintMultiplier;
+                        const float kStepMin = 0.5f;        // m/s — below this we treat as standing still
+                        const float target   = (speedXZ > kStepMin) ? 1.0f : 0.0f;
+                        const float blend    = std::min(8.0f * dt, 1.0f);
+                        footstepGain = glm::mix(footstepGain, target, blend);
+
+                        const float t01 =
+                            std::clamp((speedXZ - walk) / std::max(0.001f, sprint - walk),
+                                       0.0f, 1.0f);
+                        const float pitch = 1.0f + 0.4f * t01;  // 1.0 at walk, 1.4 at sprint
+
+                        audio.setVolume("footsteps", footstepGain);
+                        audio.setPitch ("footsteps", pitch);
+                        if (footstepGain > 0.005f) audio.start("footsteps");
+                        else                       audio.stop ("footsteps");
+                    }
                 }
             } else if (scene == game::Scene::Settings) {
                 game::MenuAction action =
@@ -924,6 +963,12 @@ int main() {
                 }
             } else if (scene == game::Scene::Journal) {
                 journalScreen.update(input, window.width(), window.height());
+            }
+            // Hard-stop footsteps when the player isn't actually moving
+            // through the world (any non-Playing scene).
+            if (scene != game::Scene::Playing) {
+                footstepGain = 0.0f;
+                audio.stop("footsteps");
             }
             journalScreen.tickToast(dt);
 
