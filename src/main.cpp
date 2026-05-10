@@ -257,6 +257,7 @@ int main() {
         audio.loadSound("ambient2",  "assets/audio/ambient_layer.mp3",    /*looping=*/true);
         audio.loadSound("level_up",       "assets/audio/level_up.mp3",       /*looping=*/false);
         audio.loadSound("upgrade_select", "assets/audio/upgrade_select.mp3", /*looping=*/false);
+        audio.loadSound("item_obtain",    "assets/audio/item_obtain.mp3",    /*looping=*/false);
         // Bias the static a touch higher than the source recording so the
         // crackle reads as signal interference rather than rumble.
         audio.setPitch ("ambient",  1.25f);
@@ -1789,6 +1790,7 @@ int main() {
                         const game::ItemInstance got { c.itemId, c.rolled };
                         player.grantItem(got);
                         lootToasts.push_back({ got, 0.0f });
+                        audio.play("item_obtain");
                     }
 
                     // Emit upward-rising particles in the chest's current colour.
