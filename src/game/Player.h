@@ -98,8 +98,8 @@ public:
     const WalkFeel& feel() const { return feel_; }
 
     // Base combat/progression stats — modified by upgrades and abilities.
-    float health      = 100.0f;
-    float maxHealth   = 100.0f;
+    float health      = 150.0f;
+    float maxHealth   = 150.0f;
     float damage      = 10.0f;    // damage per syringe
     float attackSpeed = 2.0f;     // syringes per second
     float stamina     = 20.0f;

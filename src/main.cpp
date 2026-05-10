@@ -350,14 +350,14 @@ int main() {
         //
         // name, model, walkAnim, scale, height, radius, bobFreq, bobAmp, basePitchDeg, baseYawDeg, baseRollDeg, maxHp, dropChance, moveSpeed, damage, attackRange, attackInterval
         const game::EnemyDef enemyDefs[] = {
-            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   8,  0.20f,  2.4f,  12.0f, 1.7f, 0.9f },
-            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,  20,  0.50f,  1.7f,  22.0f, 1.8f, 1.3f },
-            { "Cat",     &catModel,     findAnim(catModel, "Cat_Walk"),         0.027f, 0.25f, 1.30f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   2,  0.05f,  3.2f,   6.0f, 1.5f, 0.45f,
+            { "Harpy",   &harpyModel,   findAnim(harpyModel, "simple flyght"), 0.30f, 1.70f, 1.10f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,   8,  0.20f,  2.4f,   6.0f, 1.7f, 1.2f },
+            { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,  20,  0.50f,  1.7f,  11.0f, 1.8f, 1.7f },
+            { "Cat",     &catModel,     findAnim(catModel, "Cat_Walk"),         0.027f, 0.25f, 1.30f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   2,  0.05f,  3.2f,   3.0f, 1.5f, 0.7f,
               /*aggroAnim=*/findAnim(catModel, "Cat_Run"), /*aggroRange=*/9.0f, /*aggroSpeedMult=*/2.0f,
               /*deathAnim=*/findAnim(catModel, "Cat_Death"),
               /*attackSound=*/"assets/audio/cat_attack.mp3" },
-            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.0f,  16.0f, 1.7f, 1.1f },
-            { "Chicken", &chickenModel, nullptr,                                4.00f, 0.20f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  2.7f,   7.0f, 1.6f, 0.55f },
+            { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.0f,   8.0f, 1.7f, 1.5f },
+            { "Chicken", &chickenModel, nullptr,                                4.00f, 0.20f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  2.7f,   3.5f, 1.6f, 0.85f },
         };
 
         render::Model chestModel;
@@ -607,8 +607,8 @@ int main() {
         // Difficulty scaling: per-wave HP multiplier on spawned enemies so
         // sumOfWaveHP >= kHpScaleRatio * (player DPS * wave duration).
         // Player DPS is approximated from current inventory composition.
-        constexpr float kHpScaleRatio    = 0.8f;   // total wave HP target vs player damage budget
-        constexpr float kHpScaleMaxMult  = 6.0f;   // cap so a tiny wave + heavy build doesn't make absurd 200-HP cats
+        constexpr float kHpScaleRatio    = 0.45f;  // total wave HP target vs player damage budget
+        constexpr float kHpScaleMaxMult  = 3.0f;   // cap so a tiny wave + heavy build doesn't make absurd 200-HP cats
 
         auto playerExpectedDps = [](const game::Player& p) -> float {
             float dps = 1.0f;  // baseline manual fire — ~1 dmg/sec assumed
@@ -683,7 +683,7 @@ int main() {
         // Grace period after a wave's timer expires: the antidote can still
         // be collected for this many seconds before the run ends. Resets
         // whenever the antidote is in hand or a new wave starts.
-        constexpr float kAntidoteGraceDur = 30.0f;
+        constexpr float kAntidoteGraceDur = 60.0f;
         float antidoteGraceTimer = kAntidoteGraceDur;
 
         // Wave-start title overlay state. Tracks the last announced wave

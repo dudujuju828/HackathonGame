@@ -38,8 +38,8 @@ void Player::setSpawn(const glm::vec3& feet) {
 }
 
 void Player::restart() {
-    health      = 100.0f;
-    maxHealth   = 100.0f;
+    health      = 150.0f;
+    maxHealth   = 150.0f;
     damage      = 10.0f;
     attackSpeed = 2.0f;
     stamina     = 20.0f;
