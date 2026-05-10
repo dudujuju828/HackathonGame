@@ -258,6 +258,7 @@ int main() {
         audio.loadSound("level_up",       "assets/audio/level_up.mp3",       /*looping=*/false);
         audio.loadSound("upgrade_select", "assets/audio/upgrade_select.mp3", /*looping=*/false);
         audio.loadSound("item_obtain",    "assets/audio/item_obtain.mp3",    /*looping=*/false);
+        audio.loadSound("intro_voice",    "assets/audio/intro_voice.mp3",    /*looping=*/false);
         // Bias the static a touch higher than the source recording so the
         // crackle reads as signal interference rather than rumble.
         audio.setPitch ("ambient",  1.25f);
@@ -798,6 +799,10 @@ int main() {
         game::JournalScreen journalScreen;
         journalScreen.load("data/Journal.csv");
         game::Scene scene = game::Scene::StartMenu;
+        // Kick off the briefing voice-over. The clip is non-looping so it
+        // plays once and stops; we also force-stop it on click-through in
+        // case the player skips ahead.
+        audio.play("intro_voice");
         bool prevEscape   = false;
         bool prevB        = false;
         bool prevJ        = false;
@@ -908,6 +913,7 @@ int main() {
                     scene = game::Scene::Playing;
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     input.resetMouseDelta();
+                    audio.stop("intro_voice");  // skip remaining briefing
                 }
             } else if (scene == game::Scene::Playing) {
                 // Trigger level-up menu if pending.
