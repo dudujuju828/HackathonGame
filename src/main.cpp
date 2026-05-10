@@ -1666,7 +1666,10 @@ int main() {
                                                      1.0f);
                                 pp.life = 0.55f + game::rand01() * 0.35f;
                                 pp.age  = 0.0f;
-                                pp.size = 28.0f + game::rand01() * 18.0f;
+                                // pp.size is "pixels at clip-w = 1 m" — sub-1
+                                // values keep the burst from clamping into a
+                                // screen-wide wash at point-blank range.
+                                pp.size = 0.30f + game::rand01() * 0.20f;
                                 particles.emit(pp);
                             }
                         }
@@ -1727,7 +1730,7 @@ int main() {
                                                          1.0f);
                                     pp.life = 0.18f + game::rand01() * 0.12f;
                                     pp.age  = 0.0f;
-                                    pp.size = 18.0f + game::rand01() * 10.0f;
+                                    pp.size = 0.18f + game::rand01() * 0.10f;
                                     particles.emit(pp);
                                 }
                                 // White-hot sparkle at the chained enemy.
@@ -1743,7 +1746,7 @@ int main() {
                                     pp.color = glm::vec4(0.85f, 0.95f, 1.0f, 1.0f);
                                     pp.life = 0.30f + game::rand01() * 0.20f;
                                     pp.age  = 0.0f;
-                                    pp.size = 22.0f + game::rand01() * 12.0f;
+                                    pp.size = 0.22f + game::rand01() * 0.12f;
                                     particles.emit(pp);
                                 }
                             }
@@ -1801,7 +1804,7 @@ int main() {
                         pp.color    = glm::vec4(c.currentTint(), 1.0f);
                         pp.life     = 0.9f;
                         pp.age      = 0.0f;
-                        pp.size     = 22.0f;
+                        pp.size     = 0.22f;
                         particles.emit(pp);
                     }
                 }
