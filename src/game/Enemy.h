@@ -20,6 +20,7 @@ struct Enemy {
     int       hp       = kEnemyMaxHp;
     float     attackCooldown = 0.0f;  // seconds until this enemy can hit again
     float     speedMult      = 1.0f;  // runtime multiplier on def->moveSpeed (aggro etc.)
+    float     stepTimer      = 0.0f;  // seconds until next footstep one-shot fires
 
     // Death animation state. When dying, the enemy's hp is 0 (so alive() is
     // false) but the instance lingers until deathTimer >= deathDuration so

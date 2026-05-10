@@ -993,6 +993,17 @@ int main() {
 
             const render::Camera& cam = player.camera();
 
+            // Update miniaudio's 3D listener with the camera pose so that
+            // positional one-shots (enemy footsteps) attenuate and pan
+            // correctly. Y-up world; forward derived from camera yaw/pitch.
+            {
+                const glm::vec3 fwd = cam.forward();
+                const float lpos[3] = { cam.position.x, cam.position.y, cam.position.z };
+                const float lfwd[3] = { fwd.x,          fwd.y,          fwd.z          };
+                const float lup [3] = { 0.0f,           1.0f,           0.0f           };
+                audio.setListener(lpos, lfwd, lup);
+            }
+
             // Projectile spawn / advance only run while playing; the menu pauses
             // the world.
             if (scene == game::Scene::Playing) {
@@ -1210,6 +1221,25 @@ int main() {
                         e.speedMult = aggro ? e.def->aggroSpeedMult : 1.0f;
                     }
                     e.update(dt, player.position());
+
+                    // Footstep one-shot per stride. Cadence is one step
+                    // per ~0.7 m of travel, clamped so a sprinting cat
+                    // can't machine-gun its footfalls. Volume falls off
+                    // automatically via miniaudio's linear attenuation
+                    // (min=2 m, max=28 m) — set in Audio::playPositional.
+                    e.stepTimer -= dt;
+                    if (e.stepTimer <= 0.0f) {
+                        const float speedXZ = std::sqrt(e.velocity.x * e.velocity.x +
+                                                        e.velocity.z * e.velocity.z);
+                        if (speedXZ > 0.1f) {
+                            const float pos[3] = { e.position.x, e.position.y, e.position.z };
+                            audio.playPositional("assets/audio/enemy_footsteps.mp3", pos, 0.45f);
+                            const float interval = std::max(0.18f, 0.7f / speedXZ);
+                            e.stepTimer = interval;
+                        } else {
+                            e.stepTimer = 0.2f;  // re-check soon
+                        }
+                    }
                 }
                 // Tick animator + bones every frame so death animations play
                 // out even though hp == 0 (alive() == false).

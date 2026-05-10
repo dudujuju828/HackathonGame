@@ -58,6 +58,7 @@ void EnemySpawner::spawnAtIndex(std::vector<Enemy>& enemies, const glm::vec3& at
     const float scaledHp = static_cast<float>(e.def->maxHp) * hpMultiplier_;
     e.hp = std::max(1, static_cast<int>(std::round(scaledHp)));
     e.animator.setAnimation(e.def->walkAnim);
+    e.stepTimer = rand01_() * 0.6f;  // stagger first step so swarms don't sync
     enemies.push_back(e);
 }
 

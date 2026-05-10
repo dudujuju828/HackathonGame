@@ -27,6 +27,7 @@
 
 #include "Audio.h"
 
+#include <algorithm>
 #include <cstdio>
 
 namespace audio {
@@ -58,6 +59,12 @@ void Audio::shutdown() {
         if (snd) ma_sound_uninit(snd.get());
     }
     sounds_.clear();
+    for (ma_sound* s : oneShots_) {
+        if (!s) continue;
+        ma_sound_uninit(s);
+        delete s;
+    }
+    oneShots_.clear();
     if (engine_) {
         ma_engine_uninit(engine_);
         delete engine_;
@@ -133,6 +140,47 @@ void Audio::playOneShot(const std::string& path, float /*volume*/) {
     // PCM. Polyphonic by construction; each call gets its own voice and
     // is auto-released when it finishes.
     ma_engine_play_sound(engine_, path.c_str(), nullptr);
+}
+
+void Audio::setListener(const float pos[3], const float fwd[3], const float up[3]) {
+    if (!engine_) return;
+    ma_engine_listener_set_position (engine_, 0, pos[0], pos[1], pos[2]);
+    ma_engine_listener_set_direction(engine_, 0, fwd[0], fwd[1], fwd[2]);
+    ma_engine_listener_set_world_up (engine_, 0, up[0],  up[1],  up[2]);
+}
+
+void Audio::pruneFinishedOneShots_() {
+    oneShots_.erase(
+        std::remove_if(oneShots_.begin(), oneShots_.end(),
+            [](ma_sound* s) {
+                if (!s) return true;
+                if (ma_sound_is_playing(s)) return false;
+                ma_sound_uninit(s);
+                delete s;
+                return true;
+            }),
+        oneShots_.end());
+}
+
+void Audio::playPositional(const std::string& path, const float pos[3], float volume) {
+    if (!inited_ || !engine_) return;
+    pruneFinishedOneShots_();
+
+    auto* snd = new ma_sound{};
+    if (ma_sound_init_from_file(engine_, path.c_str(),
+                                MA_SOUND_FLAG_DECODE,
+                                nullptr, nullptr, snd) != MA_SUCCESS) {
+        delete snd;
+        return;
+    }
+    ma_sound_set_volume(snd, volume);
+    ma_sound_set_spatialization_enabled(snd, MA_TRUE);
+    ma_sound_set_attenuation_model(snd, ma_attenuation_model_linear);
+    ma_sound_set_min_distance(snd, 2.0f);
+    ma_sound_set_max_distance(snd, 28.0f);
+    ma_sound_set_position(snd, pos[0], pos[1], pos[2]);
+    ma_sound_start(snd);
+    oneShots_.push_back(snd);
 }
 
 }  // namespace audio
