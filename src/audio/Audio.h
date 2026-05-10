@@ -39,6 +39,11 @@ public:
 
     bool isPlaying(const std::string& name) const;
 
+    // Fire-and-forget one-shot. Spins up a transient voice that decodes via
+    // miniaudio's resource manager (path-cached after first call), so it's
+    // safe to spam from gameplay code without cutting prior plays off.
+    void playOneShot(const std::string& path, float volume = 1.0f);
+
     void setVolume(const std::string& name, float v);
     void setPitch (const std::string& name, float p);
 

@@ -991,6 +991,7 @@ int main() {
             if (scene == game::Scene::Playing) {
             // Spawn a projectile on the fire frame.
             if (weapon.firedThisFrame()) {
+                audio.playOneShot("assets/audio/gun_emission.mp3");
                 glm::vec3 baseFwd   = cam.forward();
                 glm::vec3 baseRight = glm::normalize(glm::cross(baseFwd, glm::vec3(0,1,0)));
                 glm::vec3 up        = glm::cross(baseRight, baseFwd);
@@ -1270,6 +1271,7 @@ int main() {
                             pj.scale           = projectileScale;
                             pj.maxAge          = 3.0f;
                             projectiles.push_back(pj);
+                            audio.playOneShot("assets/audio/gun_emission.mp3");
                             ringCooldown = 1.0f / ringRate;
                         } else {
                             // No target — re-check soon rather than burning a full second.
@@ -1316,6 +1318,7 @@ int main() {
                             pj.maxAge          = 3.0f;
                             pj.explosiveDamage = kExplosiveDamage;  // > 0 marks it as explosive
                             projectiles.push_back(pj);
+                            audio.playOneShot("assets/audio/gun_emission.mp3");
 
                             // 2.5s, halved per additional stack.
                             explosiveCooldown =
@@ -1364,6 +1367,7 @@ int main() {
                             pj.maxAge          = 3.0f;
                             pj.lightningDamage = kLightningChainDamage;  // > 0 marks it as lightning
                             projectiles.push_back(pj);
+                            audio.playOneShot("assets/audio/gun_emission.mp3");
 
                             lightningCooldown =
                                 kLightningBaseCooldown /

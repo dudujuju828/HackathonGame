@@ -126,4 +126,13 @@ void Audio::setMasterVolume(float v) {
     if (engine_) ma_engine_set_volume(engine_, v);
 }
 
+void Audio::playOneShot(const std::string& path, float /*volume*/) {
+    if (!inited_ || !engine_) return;
+    // ma_engine_play_sound uses the engine's internal resource manager —
+    // first call decodes from disk, subsequent calls reuse the cached
+    // PCM. Polyphonic by construction; each call gets its own voice and
+    // is auto-released when it finishes.
+    ma_engine_play_sound(engine_, path.c_str(), nullptr);
+}
+
 }  // namespace audio
