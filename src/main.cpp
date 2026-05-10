@@ -259,6 +259,8 @@ int main() {
         audio.loadSound("upgrade_select", "assets/audio/upgrade_select.mp3", /*looping=*/false);
         audio.loadSound("item_obtain",    "assets/audio/item_obtain.mp3",    /*looping=*/false);
         audio.loadSound("intro_voice",    "assets/audio/intro_voice.mp3",    /*looping=*/false);
+        audio.loadSound("voice_intro",    "assets/audio/voice_intro.mp3",    /*looping=*/false);
+        audio.loadSound("voice_chatter",  "assets/audio/voice_chatter.mp3",  /*looping=*/false);
         // Bias the static a touch higher than the source recording so the
         // crackle reads as signal interference rather than rumble.
         audio.setPitch ("ambient",  1.25f);
@@ -690,6 +692,13 @@ int main() {
         int   announcedWaveIdx  = -1;
         float waveAnnounceTimer = 0.0f;
 
+        // In-game voice cues. The 'intro' line fires once a few seconds
+        // after the player drops in; the 'chatter' line re-fires on a
+        // randomised 25..50 s cadence. Both timers are armed when the
+        // player leaves the StartMenu and reset on restart.
+        float voiceIntroDelay   = -1.0f;  // < 0 = idle / already played
+        float voiceChatterTimer = -1.0f;  // < 0 = idle, set on Play start
+
         float ringCooldown = 0.0f;
 
         // Achievement-style loot toast: each chest opening grants the item
@@ -914,6 +923,8 @@ int main() {
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     input.resetMouseDelta();
                     audio.stop("intro_voice");  // skip remaining briefing
+                    voiceIntroDelay   = 3.0f;
+                    voiceChatterTimer = 25.0f + game::rand01() * 25.0f;  // first chatter in 25..50 s
                 }
             } else if (scene == game::Scene::Playing) {
                 // Trigger level-up menu if pending.
@@ -1168,6 +1179,26 @@ int main() {
                 // Tick the wave-title fade.
                 if (waveAnnounceTimer > 0.0f) {
                     waveAnnounceTimer = std::max(0.0f, waveAnnounceTimer - dt);
+                }
+
+                // Voice cue scheduling: drop the intro line a few seconds
+                // after the player enters the game, then re-roll the
+                // chatter timer to a fresh 25..50 s window each time it
+                // fires. Both pause naturally when the wave loop isn't
+                // ticking (death / victory).
+                if (voiceIntroDelay >= 0.0f) {
+                    voiceIntroDelay -= dt;
+                    if (voiceIntroDelay <= 0.0f) {
+                        audio.play("voice_intro");
+                        voiceIntroDelay = -1.0f;
+                    }
+                }
+                if (voiceChatterTimer >= 0.0f) {
+                    voiceChatterTimer -= dt;
+                    if (voiceChatterTimer <= 0.0f) {
+                        audio.play("voice_chatter");
+                        voiceChatterTimer = 25.0f + game::rand01() * 25.0f;
+                    }
                 }
                 // All waves complete — victory.
                 if (waveManager.finished() && scene == game::Scene::Playing) {
@@ -1934,6 +1965,8 @@ int main() {
                     antidoteGraceTimer     = kAntidoteGraceDur;
                     announcedWaveIdx       = -1;
                     waveAnnounceTimer      = 0.0f;
+                    voiceIntroDelay        = 3.0f;
+                    voiceChatterTimer      = 25.0f + game::rand01() * 25.0f;
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
@@ -1965,6 +1998,8 @@ int main() {
                     antidoteGraceTimer     = kAntidoteGraceDur;
                     announcedWaveIdx       = -1;
                     waveAnnounceTimer      = 0.0f;
+                    voiceIntroDelay        = 3.0f;
+                    voiceChatterTimer      = 25.0f + game::rand01() * 25.0f;
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
