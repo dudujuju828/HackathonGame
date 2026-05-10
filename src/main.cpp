@@ -261,6 +261,7 @@ int main() {
         audio.loadSound("intro_voice",    "assets/audio/intro_voice.mp3",    /*looping=*/false);
         audio.loadSound("voice_intro",    "assets/audio/voice_intro.mp3",    /*looping=*/false);
         audio.loadSound("voice_chatter",  "assets/audio/voice_chatter.mp3",  /*looping=*/false);
+        audio.loadSound("antidote_pickup","assets/audio/antidote_pickup.mp3",/*looping=*/false);
         // Bias the static a touch higher than the source recording so the
         // crackle reads as signal interference rather than rumble.
         audio.setPitch ("ambient",  1.25f);
@@ -1367,6 +1368,7 @@ int main() {
                 if (dx * dx + dz * dz < game::kAntidotePickupRadius * game::kAntidotePickupRadius) {
                     box.state = game::AntidoteBoxState::Collected;
                     waveManager.setAntidoteCollected(true);
+                    audio.play("antidote_pickup");
                 }
             }
             antidoteBoxes.erase(
