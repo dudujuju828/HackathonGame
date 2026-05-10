@@ -601,8 +601,8 @@ int main() {
         // Difficulty scaling: per-wave HP multiplier on spawned enemies so
         // sumOfWaveHP >= kHpScaleRatio * (player DPS * wave duration).
         // Player DPS is approximated from current inventory composition.
-        constexpr float kHpScaleRatio    = 1.2f;   // total wave HP target vs player damage budget
-        constexpr float kHpScaleMaxMult  = 10.0f;  // cap so a tiny wave + heavy build doesn't make absurd 200-HP cats
+        constexpr float kHpScaleRatio    = 0.8f;   // total wave HP target vs player damage budget
+        constexpr float kHpScaleMaxMult  = 6.0f;   // cap so a tiny wave + heavy build doesn't make absurd 200-HP cats
 
         auto playerExpectedDps = [](const game::Player& p) -> float {
             float dps = 1.0f;  // baseline manual fire — ~1 dmg/sec assumed
