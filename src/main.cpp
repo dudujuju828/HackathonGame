@@ -348,7 +348,8 @@ int main() {
             { "Bulldog", &bulldogModel, &bulldogWalkClip,                       1.50f, 0.70f, 1.10f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,  20,  0.50f,  1.7f,  22.0f, 1.8f, 1.3f },
             { "Cat",     &catModel,     findAnim(catModel, "Cat_Walk"),         0.027f, 0.25f, 1.30f, 0.0f,  0.0f,  -90.0f,   0.0f,   0.0f,   2,  0.05f,  3.2f,   6.0f, 1.5f, 0.45f,
               /*aggroAnim=*/findAnim(catModel, "Cat_Run"), /*aggroRange=*/9.0f, /*aggroSpeedMult=*/2.0f,
-              /*deathAnim=*/findAnim(catModel, "Cat_Death") },
+              /*deathAnim=*/findAnim(catModel, "Cat_Death"),
+              /*attackSound=*/"assets/audio/cat_attack.mp3" },
             { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.0f,  16.0f, 1.7f, 1.1f },
             { "Chicken", &chickenModel, nullptr,                                4.00f, 0.20f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  2.7f,   7.0f, 1.6f, 0.55f },
         };
@@ -1296,6 +1297,11 @@ int main() {
                     player.addTrauma(0.35f);
                     player.applyKnockback(player.position() - e.position);
                     e.attackCooldown = e.def->attackInterval;
+                    if (e.def->attackSound) {
+                        const float pos[3] = {
+                            e.position.x, e.position.y + e.def->height * 0.5f, e.position.z };
+                        audio.playPositional(e.def->attackSound, pos, 0.9f);
+                    }
                 }
             }
 

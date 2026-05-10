@@ -38,6 +38,12 @@ struct EnemyDef {
     // fades from 1.0 to 0.0 alpha across its second half before being
     // culled. nullptr = legacy behaviour (instant removal on death).
     const render::AnimationClip* deathAnim = nullptr;
+
+    // Optional positional one-shot fired when this enemy lands a hit on
+    // the player. nullptr = silent attack. Path is relative to the exe's
+    // working directory; the audio system uses miniaudio's resource
+    // manager so repeated paths decode once.
+    const char* attackSound = nullptr;
 };
 
 } // namespace game
