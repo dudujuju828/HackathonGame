@@ -262,6 +262,12 @@ int main() {
         audio.loadSound("voice_intro",    "assets/audio/voice_intro.mp3",    /*looping=*/false);
         audio.loadSound("voice_chatter",  "assets/audio/voice_chatter.mp3",  /*looping=*/false);
         audio.loadSound("antidote_pickup","assets/audio/antidote_pickup.mp3",/*looping=*/false);
+        audio.loadSound("boss_intro",     "assets/audio/boss_intro.mp3",     /*looping=*/false);
+        // Roar SFX is shorter than the 5 s Roar animation, so it loops while
+        // the boss intro cutscene is active and is force-stopped when the
+        // cutscene ends — this keeps the audio aligned with the on-screen
+        // animation regardless of the clip's actual length.
+        audio.loadSound("boss_roar",      "assets/audio/boss_roar.mp3",      /*looping=*/true);
         // Bias the static a touch higher than the source recording so the
         // crackle reads as signal interference rather than rumble.
         audio.setPitch ("ambient",  1.25f);
@@ -313,7 +319,7 @@ int main() {
         }
 
         // Enemy models — one per type, loaded once and shared across all instances.
-        render::Model harpyModel, bulldogModel, catModel, pigModel, chickenModel;
+        render::Model harpyModel, bulldogModel, catModel, pigModel, chickenModel, tyrannoModel;
         auto loadEnemy = [](render::Model& m, const char* path) {
             if (!m.loadFromFile(path))
                 std::fprintf(stderr, "[main] failed to load %s\n", path);
@@ -323,6 +329,7 @@ int main() {
         loadEnemy(catModel,     "assets/models/Cat.glb");
         loadEnemy(pigModel,     "assets/models/Pig.glb");
         loadEnemy(chickenModel, "assets/models/Chicken.glb");
+        loadEnemy(tyrannoModel, "assets/models/tyranno.glb");
 
         // Build the procedural walk clip for Bulldog now that the skeleton is loaded.
         render::AnimationClip bulldogWalkClip;
@@ -359,6 +366,21 @@ int main() {
               /*attackSound=*/"assets/audio/cat_attack.mp3" },
             { "Pig",     &pigModel,     findAnim(pigModel, "ArmatureAction"),   0.60f, 0.35f, 1.00f, 0.0f,  0.0f,    0.0f,   0.0f,   0.0f,  14,  0.30f,  2.0f,   8.0f, 1.7f, 1.5f },
             { "Chicken", &chickenModel, nullptr,                                4.00f, 0.20f, 1.00f, 16.0f, 0.06f, -90.0f, -90.0f,  20.0f,   4,  0.10f,  2.7f,   3.5f, 1.6f, 0.85f },
+            // Tyranno boss — solo encounter spawned after wave 1. HP is used
+            // verbatim (isBoss bypasses the wave HP scaler). Roar clip is
+            // forced as a one-shot during the intro cutscene; Run takes over
+            // once the player is in aggro range (always true in practice
+            // since aggroRange is huge).
+            // baseYawDeg=-90 rotates the model 90 deg clockwise (viewed from
+            // above) so the GLB's native side-facing forward lines up with
+            // the engine's "+Z forward" convention.
+            { "Tyranno", &tyrannoModel, findAnim(tyrannoModel, "Walk"),         0.022f, 0.30f, 6.00f, 0.0f, 0.0f,    0.0f, -90.0f,   0.0f, 240, 1.00f,  2.4f,  28.0f, 6.0f, 1.6f,
+              /*aggroAnim=*/findAnim(tyrannoModel, "Run"), /*aggroRange=*/40.0f, /*aggroSpeedMult=*/1.4f,
+              /*deathAnim=*/findAnim(tyrannoModel, "Fall"),
+              /*attackSound=*/"assets/audio/cat_attack.mp3",
+              /*isBoss=*/true,
+              /*roarAnim=*/findAnim(tyrannoModel, "Roar"),
+              /*attackAnim=*/findAnim(tyrannoModel, "Attack") },
         };
 
         render::Model chestModel;
@@ -712,6 +734,19 @@ int main() {
         constexpr float kCutTiltLeftEnd = 3.30f;  // 1 s arc, peaks at 2.8 s
         constexpr float kCutTiltRightEnd = 4.30f; // 1 s arc, peaks at 3.8 s
         constexpr float kCutMaxLength   = 14.0f;  // hard timeout — never strand the player
+
+        // Boss encounter — Tyranno spawns once after wave 1 ends. The intro
+        // cutscene freezes input + the wave loop, pans the camera up the
+        // boss from feet to head with heavy shake, and lets the Roar
+        // one-shot play to completion before handing control back.
+        bool  bossActive         = false;
+        bool  bossCutsceneActive = false;
+        bool  bossDefeated       = false;
+        float bossCutsceneTime   = 0.0f;
+        uint32_t bossEnemyId     = 0;
+        int   bossMaxHp          = 0;
+        constexpr float kBossCutsceneDur = 5.6f;  // covers Roar (5.0 s) + a hold beat
+        constexpr float kBossSpawnDist   = 14.0f; // metres in front of the player at spawn
 
         float ringCooldown = 0.0f;
 
@@ -1076,6 +1111,77 @@ int main() {
                         player.camera().pitch = 0.0f;
                     }
                 }
+            } else if (scene == game::Scene::Playing && bossCutsceneActive) {
+                // Boss intro cutscene: camera locked at the player's
+                // current head height, yaw points at the Tyranno, pitch
+                // pans from the feet up to the head while the Roar plays.
+                // Heavy continuous shake throughout; trauma is spiked at
+                // the start so the impact reads even on the first frame.
+                bossCutsceneTime += dt;
+                game::Enemy* boss = nullptr;
+                for (auto& e : enemies) {
+                    if (e.id == bossEnemyId) { boss = &e; break; }
+                }
+                if (!boss) {
+                    // Boss vanished mid-cutscene (shouldn't happen — failsafe).
+                    bossCutsceneActive = false;
+                    bossActive         = false;
+                    player.camera().viewShakeYaw   = 0.0f;
+                    player.camera().viewShakePitch = 0.0f;
+                } else {
+                    const float t    = std::clamp(bossCutsceneTime / kBossCutsceneDur, 0.0f, 1.0f);
+                    const float ease = t * t * (3.0f - 2.0f * t);  // smoothstep
+
+                    // Lock the camera to player's head, yaw at the boss.
+                    const float gh = terrain.heightAt(player.position().x, player.position().z);
+                    player.camera().position = glm::vec3(player.position().x,
+                                                         gh + player.feel().headHeight,
+                                                         player.position().z);
+                    const float dx = boss->position.x - player.position().x;
+                    const float dz = boss->position.z - player.position().z;
+                    player.camera().yaw   = glm::degrees(std::atan2(dz, dx));
+                    player.camera().pitch = glm::mix(-12.0f, 24.0f, ease);
+
+                    // Big trauma jab at the start; layered shake decays over time.
+                    if (bossCutsceneTime < dt + 1e-6f) player.addTrauma(1.0f);
+                    const float k = 1.0f - 0.55f * t;
+                    player.camera().viewShakeYaw =
+                        std::sin(bossCutsceneTime * 67.0f) * 1.6f * k
+                      + std::sin(bossCutsceneTime * 31.0f) * 0.8f * k;
+                    player.camera().viewShakePitch =
+                        std::cos(bossCutsceneTime * 71.0f) * 1.4f * k
+                      + std::cos(bossCutsceneTime * 23.0f) * 0.7f * k;
+
+                    // Boss frozen in place during the Roar; stays planted on
+                    // terrain. Velocity is *not* zero — the per-enemy draw
+                    // pass derives heading from velocity direction, so we
+                    // point a tiny vector at the player to keep the dino
+                    // facing them throughout the roar. Magnitude is below
+                    // anything that would cause visible drift, and `e.update`
+                    // is skipped for the boss during the cutscene anyway.
+                    boss->position.y = terrain.heightAt(boss->position.x, boss->position.z);
+                    glm::vec3 toPlayer(player.position().x - boss->position.x,
+                                       0.0f,
+                                       player.position().z - boss->position.z);
+                    const float tpLen = glm::length(toPlayer);
+                    if (tpLen > 1e-3f) toPlayer /= tpLen;
+                    boss->velocity   = toPlayer * 0.01f;
+                    boss->speedMult  = 0.0f;
+
+                    if (bossCutsceneTime >= kBossCutsceneDur) {
+                        bossCutsceneActive = false;
+                        boss->speedMult    = 1.0f;
+                        // Reset to walk so the per-frame aggro switch picks
+                        // its desired clip cleanly from a known baseline.
+                        if (boss->def && boss->def->walkAnim) {
+                            boss->animator.setAnimation(boss->def->walkAnim);
+                            boss->currentAnim = boss->def->walkAnim;
+                        }
+                        player.camera().viewShakeYaw   = 0.0f;
+                        player.camera().viewShakePitch = 0.0f;
+                        audio.stop("boss_roar");
+                    }
+                }
             } else if (scene == game::Scene::Playing) {
                 // Trigger level-up menu if pending.
                 if (player.pendingLevelUps() > 0) {
@@ -1262,7 +1368,7 @@ int main() {
             // Spawn + advance enemies (also gated by Playing scene).
             // WaveManager owns scheduling now; falls back to the legacy spawner
             // tick only if no waves were loaded.
-            if (waveManager.totalWaves() > 0 && !cutsceneActive) {
+            if (waveManager.totalWaves() > 0 && !cutsceneActive && !bossCutsceneActive) {
                 // Refresh the difficulty multiplier each frame so groups that
                 // spawn later in a wave reflect any items the player just
                 // grabbed mid-fight.
@@ -1281,6 +1387,63 @@ int main() {
                     if (antidoteSpawnedForWave >= 0 && curWave > antidoteSpawnedForWave) {
                         player.health = std::min(player.maxHealth,
                                                  player.health + 0.20f * player.maxHealth);
+                    }
+                    // Boss intro: when wave 1 (index 0) hands off to wave 2,
+                    // spawn the Tyranno in front of the player and start the
+                    // intro cutscene. Only once per run — bossDefeated guards
+                    // against re-trigger on a wraparound or restart-without-reset.
+                    const bool justFinishedWave1 =
+                        antidoteSpawnedForWave == 0 && curWave == 1;
+                    if (justFinishedWave1 && !bossActive && !bossDefeated) {
+                        const int bossIdx = spawner.findDefIndex("Tyranno");
+                        if (bossIdx >= 0) {
+                            // Wipe any remaining wave-1 enemies + their stuck
+                            // projectiles so the boss reveal is uncluttered.
+                            // Stuck projectiles reference enemies by id; they'd
+                            // chase a culled host and fade out anyway, but
+                            // dropping them outright keeps the scene clean.
+                            enemies.clear();
+                            projectiles.erase(
+                                std::remove_if(projectiles.begin(), projectiles.end(),
+                                    [](const game::Projectile& p){ return p.stuck(); }),
+                                projectiles.end());
+
+                            // Spawn 14 m ahead of where the player is currently
+                            // looking (XZ-projected camera forward). The
+                            // ringPositionAround helper would scatter, which we
+                            // don't want for a scripted reveal.
+                            const glm::vec3 fwd3 = cam.forward();
+                            glm::vec3 fwd2(fwd3.x, 0.0f, fwd3.z);
+                            const float fl = glm::length(fwd2);
+                            if (fl > 1e-3f) fwd2 /= fl;
+                            else fwd2 = glm::vec3(0.0f, 0.0f, -1.0f);
+                            const glm::vec3 bossPos =
+                                player.position() + fwd2 * kBossSpawnDist;
+                            // Bypass the wave HP multiplier — boss HP is
+                            // already tuned. Save/restore so wave 2 spawns
+                            // get their normal multiplier afterwards.
+                            const float savedMult = spawner.hpMultiplier();
+                            spawner.setHpMultiplier(1.0f);
+                            spawner.spawnAtIndex(enemies, bossPos, bossIdx);
+                            spawner.setHpMultiplier(savedMult);
+                            if (!enemies.empty()) {
+                                game::Enemy& bossEnt = enemies.back();
+                                bossEnemyId        = bossEnt.id;
+                                bossMaxHp          = bossEnt.def->maxHp;
+                                bossEnt.hp         = bossMaxHp;
+                                bossEnt.speedMult  = 0.0f;  // frozen for the Roar
+                                if (bossEnt.def && bossEnt.def->roarAnim) {
+                                    bossEnt.animator.setAnimation(
+                                        bossEnt.def->roarAnim, /*loop=*/false);
+                                    bossEnt.currentAnim = bossEnt.def->roarAnim;
+                                }
+                                bossActive         = true;
+                                bossCutsceneActive = true;
+                                bossCutsceneTime   = 0.0f;
+                                audio.play("boss_intro");
+                                audio.play("boss_roar");
+                            }
+                        }
                     }
                     antidoteSpawnedForWave = curWave;
                     journalScreen.unlock();
@@ -1356,7 +1519,7 @@ int main() {
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                     input.resetMouseDelta();
                 }
-            } else if (!cutsceneActive) {
+            } else if (!cutsceneActive && !bossCutsceneActive) {
                 spawner.update(dt, enemies, player.position());
             }
 
@@ -1432,10 +1595,35 @@ int main() {
 
             for (auto& e : enemies) {
                 if (!e.def) continue;
-                if (e.alive()) {
-                    // Aggro check: within def->aggroRange of the player, swap
-                    // to the def's aggroAnim and apply the speed multiplier.
-                    if (e.def->aggroAnim && e.def->aggroRange > 0.0f) {
+                // During the boss intro the boss is driven by the cutscene
+                // block above (frozen pose, forced Roar one-shot). Skip the
+                // aggro switch + chase update here so we don't overwrite it,
+                // but still tick the animator so the Roar plays.
+                const bool bossLockedForIntro =
+                    bossCutsceneActive && e.def->isBoss && e.id == bossEnemyId;
+                if (e.alive() && !bossLockedForIntro) {
+                    // Attack-animation hold: if a one-shot attack clip is in
+                    // flight, freeze movement and skip the aggro switch until
+                    // the clip finishes. When in attackRange and no clip is
+                    // active, kick off a fresh attack one-shot.
+                    bool attackPlaying =
+                        e.def->attackAnim && e.currentAnim == e.def->attackAnim
+                        && !e.animator.finished();
+                    if (e.def->attackAnim && !attackPlaying) {
+                        const float dx = e.position.x - player.position().x;
+                        const float dz = e.position.z - player.position().z;
+                        if (dx * dx + dz * dz < e.def->attackRange * e.def->attackRange) {
+                            e.animator.setAnimation(e.def->attackAnim, /*loop=*/false);
+                            e.currentAnim  = e.def->attackAnim;
+                            attackPlaying  = true;
+                        }
+                    }
+
+                    if (attackPlaying) {
+                        e.speedMult = 0.0f;  // plant feet for the swing
+                    } else if (e.def->aggroAnim && e.def->aggroRange > 0.0f) {
+                        // Aggro check: within def->aggroRange of the player, swap
+                        // to the def's aggroAnim and apply the speed multiplier.
                         const float dx = e.position.x - player.position().x;
                         const float dz = e.position.z - player.position().z;
                         const bool aggro =
@@ -1461,9 +1649,26 @@ int main() {
                                                         e.velocity.z * e.velocity.z);
                         if (speedXZ > 0.1f) {
                             const float pos[3] = { e.position.x, e.position.y, e.position.z };
-                            audio.playPositional("assets/audio/enemy_footsteps.mp3", pos, 0.45f);
+                            // Boss has its own deeper stomp asset; everything
+                            // else uses the standard light footfall clip.
+                            const char* stepSfx = e.def->isBoss
+                                ? "assets/audio/boss_stomp.mp3"
+                                : "assets/audio/enemy_footsteps.mp3";
+                            const float stepGain = e.def->isBoss ? 1.0f : 0.45f;
+                            audio.playPositional(stepSfx, pos, stepGain);
                             const float interval = std::max(0.18f, 0.7f / speedXZ);
                             e.stepTimer = interval;
+                            // Boss footfalls thump the camera. Trauma scales
+                            // inverse-linearly with distance so the shake hits
+                            // hard up close and tapers off on the horizon.
+                            if (e.def->isBoss) {
+                                const float dx = e.position.x - player.position().x;
+                                const float dz = e.position.z - player.position().z;
+                                const float dist = std::sqrt(dx * dx + dz * dz);
+                                const float falloff =
+                                    std::clamp(1.0f - dist / 30.0f, 0.0f, 1.0f);
+                                player.addTrauma(0.55f * falloff);
+                            }
                         } else {
                             e.stepTimer = 0.2f;  // re-check soon
                         }
@@ -1513,7 +1718,7 @@ int main() {
             // Enemy contact damage. XZ distance check + per-enemy cooldown so
             // a clustered swarm can't burst the player in one frame.
             for (auto& e : enemies) {
-                if (cutsceneActive) break;  // no damage during the drop-in
+                if (cutsceneActive || bossCutsceneActive) break;  // no damage during cutscenes
                 if (!e.alive() || !e.def) continue;
                 if (e.attackCooldown > 0.0f) continue;
                 const glm::vec3 d = e.position - player.position();
@@ -1526,7 +1731,10 @@ int main() {
                     if (e.def->attackSound) {
                         const float pos[3] = {
                             e.position.x, e.position.y + e.def->height * 0.5f, e.position.z };
-                        audio.playPositional(e.def->attackSound, pos, 0.9f);
+                        // Single-voice gate so a swarm of cats hitting in the
+                        // same frame doesn't pile N copies of cat_attack.mp3
+                        // on top of each other.
+                        audio.playPositionalSingle(e.def->attackSound, pos, 0.9f);
                     }
                 }
             }
@@ -2051,6 +2259,22 @@ int main() {
                     }),
                 enemies.end());
 
+            // Boss lifecycle: once the boss is no longer in the enemies list
+            // (death anim ran out + culled), latch bossDefeated so the HP bar
+            // hides and we don't re-spawn another Tyranno on a future advance.
+            if (bossActive) {
+                bool stillThere = false;
+                for (const auto& e : enemies) {
+                    if (e.id == bossEnemyId) { stillThere = true; break; }
+                }
+                if (!stillThere) {
+                    bossActive         = false;
+                    bossCutsceneActive = false;
+                    bossDefeated       = true;
+                    bossEnemyId        = 0;
+                }
+            }
+
             // Re-cull projectiles that died from a hit.
             projectiles.erase(
                 std::remove_if(projectiles.begin(), projectiles.end(),
@@ -2123,6 +2347,13 @@ int main() {
                     cutsceneTime           = 0.0f;
                     cutsceneCatSpawned     = false;
                     cutsceneLanded         = false;
+                    bossActive             = false;
+                    bossCutsceneActive     = false;
+                    bossDefeated           = false;
+                    bossCutsceneTime       = 0.0f;
+                    bossEnemyId            = 0;
+                    bossMaxHp              = 0;
+                    audio.stop("boss_roar");
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
@@ -2160,6 +2391,13 @@ int main() {
                     cutsceneTime           = 0.0f;
                     cutsceneCatSpawned     = false;
                     cutsceneLanded         = false;
+                    bossActive             = false;
+                    bossCutsceneActive     = false;
+                    bossDefeated           = false;
+                    bossCutsceneTime       = 0.0f;
+                    bossEnemyId            = 0;
+                    bossMaxHp              = 0;
+                    audio.stop("boss_roar");
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
@@ -2952,6 +3190,59 @@ int main() {
                               H * 0.40f + 11.0f * hdrScale + 8.0f,
                               nameStr, nameScale,
                               glm::vec4(1.0f, 0.95f, 0.78f, alpha));
+                }
+                // Boss HP bar — wide bar centred near the top of the screen,
+                // visible while the Tyranno is alive. Hidden during the intro
+                // cutscene so the camera pan reads cleanly without HUD noise.
+                if (bossActive && !bossCutsceneActive && bossMaxHp > 0) {
+                    const game::Enemy* bossEnt = nullptr;
+                    for (const auto& e : enemies) {
+                        if (e.id == bossEnemyId) { bossEnt = &e; break; }
+                    }
+                    if (bossEnt && bossEnt->alive()) {
+                        const int W = window.width();
+                        const int H = window.height();
+                        const float barW = std::min(820.0f, W * 0.62f);
+                        const float barH = 26.0f;
+                        const float barX = W * 0.5f - barW * 0.5f;
+                        const float barY = 96.0f;  // sits below the wave/XP HUD line
+                        const float frac = std::clamp(
+                            static_cast<float>(bossEnt->hp) /
+                            static_cast<float>(bossMaxHp), 0.0f, 1.0f);
+                        // Dark backing plate behind the bar to lift it off
+                        // the world for legibility regardless of skybox.
+                        hud.drawRect(W, H,
+                                     glm::vec2(barX - 6.0f, barY - 22.0f),
+                                     glm::vec2(barW + 12.0f, barH + 32.0f),
+                                     glm::vec3(0.02f, 0.01f, 0.01f), 0.55f);
+                        hud.drawProgress(W, H,
+                                         glm::vec2(barX, barY),
+                                         glm::vec2(barW, barH),
+                                         frac,
+                                         glm::vec3(0.85f, 0.10f, 0.08f),
+                                         glm::vec3(0.06f, 0.02f, 0.02f),
+                                         glm::vec3(0.85f, 0.50f, 0.30f),
+                                         2.0f, 0.95f);
+                        const std::string bossName = "TYRANNO";
+                        const float bnScale = 1.6f;
+                        const float bnW = render::Text::measure(bossName) * bnScale;
+                        text.draw(W, H,
+                                  W * 0.5f - bnW * 0.5f,
+                                  barY - 18.0f,
+                                  bossName, bnScale,
+                                  glm::vec4(1.0f, 0.85f, 0.55f, 0.95f));
+                        char hpBuf[32];
+                        std::snprintf(hpBuf, sizeof(hpBuf), "%d / %d",
+                                      std::max(0, bossEnt->hp), bossMaxHp);
+                        const std::string hpStr = hpBuf;
+                        const float hpScale = 1.1f;
+                        const float hpW = render::Text::measure(hpStr) * hpScale;
+                        text.draw(W, H,
+                                  W * 0.5f - hpW * 0.5f,
+                                  barY + barH * 0.5f - 5.0f,
+                                  hpStr, hpScale,
+                                  glm::vec4(1.0f, 1.0f, 1.0f, 0.95f));
+                    }
                 }
                 journalScreen.drawToast(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::Settings) {

@@ -44,6 +44,18 @@ struct EnemyDef {
     // working directory; the audio system uses miniaudio's resource
     // manager so repeated paths decode once.
     const char* attackSound = nullptr;
+
+    // Boss-only data. When `isBoss` is true, the enemy bypasses the wave
+    // HP multiplier (its `maxHp` is used verbatim) and the rendering /
+    // cutscene code can locate the active boss without a separate registry.
+    // `roarAnim` is forced as a one-shot during the boss intro cutscene
+    // before the normal aggro/walk switching takes over. `attackAnim`
+    // plays as a one-shot whenever the enemy is inside `attackRange` and
+    // there isn't already an attack animation in flight. Kept at the end
+    // of the struct so existing rows that don't supply these stay valid.
+    bool                         isBoss     = false;
+    const render::AnimationClip* roarAnim   = nullptr;
+    const render::AnimationClip* attackAnim = nullptr;
 };
 
 } // namespace game
