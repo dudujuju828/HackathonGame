@@ -65,6 +65,10 @@ void Audio::shutdown() {
         delete s;
     }
     oneShots_.clear();
+    for (auto& [path, snd] : singletons_) {
+        if (snd) ma_sound_uninit(snd.get());
+    }
+    singletons_.clear();
     if (engine_) {
         ma_engine_uninit(engine_);
         delete engine_;
@@ -164,6 +168,31 @@ void Audio::pruneFinishedOneShots_() {
                 return true;
             }),
         oneShots_.end());
+}
+
+void Audio::playPositionalSingle(const std::string& path, const float pos[3], float volume) {
+    if (!inited_ || !engine_) return;
+    auto it = singletons_.find(path);
+    if (it == singletons_.end()) {
+        // First call for this path — load + cache the voice.
+        auto snd = std::make_unique<ma_sound>();
+        if (ma_sound_init_from_file(engine_, path.c_str(),
+                                    MA_SOUND_FLAG_DECODE,
+                                    nullptr, nullptr, snd.get()) != MA_SUCCESS) {
+            return;
+        }
+        ma_sound_set_spatialization_enabled(snd.get(), MA_TRUE);
+        ma_sound_set_attenuation_model(snd.get(), ma_attenuation_model_linear);
+        ma_sound_set_min_distance(snd.get(), 2.0f);
+        ma_sound_set_max_distance(snd.get(), 28.0f);
+        it = singletons_.emplace(path, std::move(snd)).first;
+    }
+    ma_sound* s = it->second.get();
+    if (ma_sound_is_playing(s)) return;  // single-voice gate: drop overlapping triggers
+    ma_sound_set_volume(s, volume);
+    ma_sound_set_position(s, pos[0], pos[1], pos[2]);
+    ma_sound_seek_to_pcm_frame(s, 0);
+    ma_sound_start(s);
 }
 
 void Audio::playPositional(const std::string& path, const float pos[3], float volume) {

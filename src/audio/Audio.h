@@ -56,6 +56,13 @@ public:
     // subsequent calls so the active list doesn't grow unbounded.
     void playPositional(const std::string& path, const float pos[3], float volume = 1.0f);
 
+    // Spatialised play that allows at most one active voice for the given
+    // `path`. If a previous call's voice is still playing, this call is a
+    // no-op (the position update is dropped on purpose so the in-flight
+    // sound doesn't teleport mid-clip). Otherwise the cached voice is
+    // repositioned, rewound, and started.
+    void playPositionalSingle(const std::string& path, const float pos[3], float volume = 1.0f);
+
     void setVolume(const std::string& name, float v);
     void setPitch (const std::string& name, float p);
 
@@ -70,6 +77,9 @@ private:
     // Active spatialised one-shots; each owns its own ma_sound and is
     // reaped once playback finishes (see pruneFinishedOneShots_).
     std::vector<ma_sound*> oneShots_;
+    // Single-voice spatial cache used by playPositionalSingle — keyed by
+    // path so each unique sound effect has at most one in-flight voice.
+    std::unordered_map<std::string, std::unique_ptr<ma_sound>> singletons_;
     bool inited_ = false;
 };
 
