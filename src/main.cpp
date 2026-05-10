@@ -983,24 +983,43 @@ int main() {
                 // Phase 2: hard land + a single crouch-bounce in y so the
                 // weight of the impact reads. FOV decays back to base over
                 // the settle window; pitch eases from end-of-fall to a
-                // looking-around resting angle.
+                // looking-around resting angle. A big custom view-shake is
+                // driven directly off the camera shake channels — way
+                // larger than the standard trauma curves so the impact
+                // sells the height of the drop.
                 else if (cutsceneTime < kCutSettleEnd) {
                     if (!cutsceneLanded) {
                         cutsceneLanded = true;
-                        player.addTrauma(1.1f);
+                        player.addTrauma(1.0f);
                     }
                     const float settleT =
                         (cutsceneTime - kCutFallEnd)
                         / (kCutSettleEnd - kCutFallEnd);
                     const float bounce =
-                        std::sin(settleT * kPi) * 0.35f * (1.0f - settleT);
+                        std::sin(settleT * kPi) * 0.45f * (1.0f - settleT);
                     const float fovDecay = std::max(0.0f, 1.0f - settleT * 1.4f);
-                    player.camera().position = glm::vec3(0.0f, headY - bounce, 3.0f);
+
+                    // Quadratic falloff: violent on contact, finished by
+                    // the time the head turns start. Frequencies chosen
+                    // so yaw + pitch don't beat against each other.
+                    const float decay = std::max(0.0f, 1.0f - settleT);
+                    const float k     = decay * decay;
+                    const float shakeYaw   =
+                        std::sin(cutsceneTime * 73.0f) * 7.0f * k
+                      + std::sin(cutsceneTime * 31.0f) * 3.0f * k;
+                    const float shakePitch =
+                        std::cos(cutsceneTime * 61.0f) * 5.0f * k
+                      + std::cos(cutsceneTime * 23.0f) * 2.5f * k;
+                    // Lateral kick on top of the bounce so the body
+                    // visibly judders sideways for the first beat.
+                    const float lateral = std::sin(cutsceneTime * 38.0f) * 0.18f * k;
+
+                    player.camera().position = glm::vec3(lateral, headY - bounce, 3.0f);
                     player.camera().yaw   = -90.0f;
                     player.camera().pitch = glm::mix(-45.0f, -10.0f, settleT);
                     player.camera().fovDeg += 10.0f * fovDecay;
-                    player.camera().viewShakeYaw   = 0.0f;
-                    player.camera().viewShakePitch = 0.0f;
+                    player.camera().viewShakeYaw   = shakeYaw;
+                    player.camera().viewShakePitch = shakePitch;
                 }
                 // Phase 3: tilt left and back. -90 -> -150 -> -90 over 1 s.
                 else if (cutsceneTime < kCutTiltLeftEnd) {
