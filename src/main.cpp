@@ -677,6 +677,18 @@ int main() {
         antidoteBoxes.reserve(4);
         int antidoteSpawnedForWave = -1;
 
+        // Grace period after a wave's timer expires: the antidote can still
+        // be collected for this many seconds before the run ends. Resets
+        // whenever the antidote is in hand or a new wave starts.
+        constexpr float kAntidoteGraceDur = 30.0f;
+        float antidoteGraceTimer = kAntidoteGraceDur;
+
+        // Wave-start title overlay state. Tracks the last announced wave
+        // index and a timer that ticks down so the centred banner can fade.
+        constexpr float kWaveAnnounceDur = 3.0f;
+        int   announcedWaveIdx  = -1;
+        float waveAnnounceTimer = 0.0f;
+
         float ringCooldown = 0.0f;
 
         // Achievement-style loot toast: each chest opening grants the item
@@ -1106,6 +1118,12 @@ int main() {
                     antidoteSpawnedForWave = curWave;
                     journalScreen.unlock();
                     antidoteBoxes.clear();
+                    // New wave: reset grace timer + start the title fade.
+                    antidoteGraceTimer = kAntidoteGraceDur;
+                    if (curWave != announcedWaveIdx) {
+                        announcedWaveIdx  = curWave;
+                        waveAnnounceTimer = kWaveAnnounceDur;
+                    }
                     // Inset accounts for the box's draw scale so the visual
                     // never sticks through the wall geometry.
                     const float boxBound = kWallHalfMap - kPlayerInset - 5.0f;
@@ -1125,12 +1143,25 @@ int main() {
                     box.yawRad   = game::rand01() * 6.28318530718f;
                     antidoteBoxes.push_back(box);
                 }
-                // Wave timer expired without antidote collected — game over.
+                // Wave timer expired without antidote collected — start
+                // the grace countdown. Game-over only fires once it ticks
+                // through to zero, giving the player a clear window to
+                // sprint to the box.
                 if (waveManager.waitingForAntidote()) {
-                    player.health = 0.0f;
-                    scene = game::Scene::GameOver;
-                    glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-                    input.resetMouseDelta();
+                    antidoteGraceTimer = std::max(0.0f, antidoteGraceTimer - dt);
+                    if (antidoteGraceTimer <= 0.0f) {
+                        player.health = 0.0f;
+                        scene = game::Scene::GameOver;
+                        glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                        input.resetMouseDelta();
+                    }
+                } else {
+                    antidoteGraceTimer = kAntidoteGraceDur;
+                }
+
+                // Tick the wave-title fade.
+                if (waveAnnounceTimer > 0.0f) {
+                    waveAnnounceTimer = std::max(0.0f, waveAnnounceTimer - dt);
                 }
                 // All waves complete — victory.
                 if (waveManager.finished() && scene == game::Scene::Playing) {
@@ -1894,6 +1925,9 @@ int main() {
                     chests.clear();
                     antidoteBoxes.clear();
                     antidoteSpawnedForWave = -1;
+                    antidoteGraceTimer     = kAntidoteGraceDur;
+                    announcedWaveIdx       = -1;
+                    waveAnnounceTimer      = 0.0f;
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
@@ -1922,6 +1956,9 @@ int main() {
                     chests.clear();
                     antidoteBoxes.clear();
                     antidoteSpawnedForWave = -1;
+                    antidoteGraceTimer     = kAntidoteGraceDur;
+                    announcedWaveIdx       = -1;
+                    waveAnnounceTimer      = 0.0f;
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
@@ -2648,6 +2685,72 @@ int main() {
                                   antiStr, antiScale,
                                   glm::vec4(0.35f, 1.0f, 0.5f, pulse * urgency));
                     }
+                }
+                // Big centred grace-period countdown when the wave timer
+                // expired without the antidote in hand. Drawn over normal
+                // HUD so it can't be missed.
+                if (waveManager.totalWaves() > 0 && waveManager.waitingForAntidote()) {
+                    const int W = window.width();
+                    const int H = window.height();
+
+                    char graceBuf[96];
+                    std::snprintf(graceBuf, sizeof(graceBuf),
+                                  "ANTIDOTE OVERDUE  %.0f", std::ceil(antidoteGraceTimer));
+                    const std::string graceStr = graceBuf;
+                    const float graceScale = 4.0f;
+                    const float graceW = render::Text::measure(graceStr) * graceScale;
+                    const float pulse  = 0.70f + 0.30f * std::sin(time.total() * 6.0f);
+                    const float ratio  = std::clamp(
+                        antidoteGraceTimer / kAntidoteGraceDur, 0.0f, 1.0f);
+                    // Red intensifies as the timer runs down.
+                    const glm::vec4 col(1.0f,
+                                        0.20f + 0.40f * ratio,
+                                        0.20f + 0.30f * ratio,
+                                        pulse);
+                    text.draw(W, H,
+                              W * 0.5f - graceW * 0.5f,
+                              H * 0.20f,
+                              graceStr, graceScale, col);
+
+                    const std::string sub = "RUN TO THE GREEN BEAM";
+                    const float subScale = 1.8f;
+                    const float subW = render::Text::measure(sub) * subScale;
+                    text.draw(W, H,
+                              W * 0.5f - subW * 0.5f,
+                              H * 0.20f + 11.0f * graceScale + 6.0f,
+                              sub, subScale,
+                              glm::vec4(1.0f, 0.85f, 0.85f, pulse * 0.85f));
+                }
+
+                // Centred wave-name banner that fades over kWaveAnnounceDur.
+                if (waveAnnounceTimer > 0.0f && waveManager.totalWaves() > 0) {
+                    const int W = window.width();
+                    const int H = window.height();
+                    // Quadratic ease so the title sits crisp for most of
+                    // its life and the fade only kicks in near the end.
+                    const float frac  = waveAnnounceTimer / kWaveAnnounceDur;
+                    const float alpha = std::clamp(frac * frac * 1.6f, 0.0f, 1.0f);
+
+                    char hdrBuf[32];
+                    std::snprintf(hdrBuf, sizeof(hdrBuf),
+                                  "WAVE %d", waveManager.currentWaveIndex() + 1);
+                    const std::string hdrStr = hdrBuf;
+                    const float hdrScale = 2.4f;
+                    const float hdrW = render::Text::measure(hdrStr) * hdrScale;
+                    text.draw(W, H,
+                              W * 0.5f - hdrW * 0.5f,
+                              H * 0.40f,
+                              hdrStr, hdrScale,
+                              glm::vec4(0.85f, 0.95f, 1.0f, alpha * 0.85f));
+
+                    const std::string nameStr = waveManager.currentWaveName();
+                    const float nameScale = 5.0f;
+                    const float nameW = render::Text::measure(nameStr) * nameScale;
+                    text.draw(W, H,
+                              W * 0.5f - nameW * 0.5f,
+                              H * 0.40f + 11.0f * hdrScale + 8.0f,
+                              nameStr, nameScale,
+                              glm::vec4(1.0f, 0.95f, 0.78f, alpha));
                 }
                 journalScreen.drawToast(hud, text, window.width(), window.height());
             } else if (scene == game::Scene::Settings) {
