@@ -86,6 +86,10 @@ bool Audio::loadSound(const std::string& name, const std::string& path, bool loo
         return false;
     }
     ma_sound_set_looping(snd.get(), looping ? MA_TRUE : MA_FALSE);
+    // Cached named sounds are non-spatial by default — they're for UI /
+    // ambience / loops where the listener pose mustn't affect mix.
+    // playPositional() opts in to spatialisation per call.
+    ma_sound_set_spatialization_enabled(snd.get(), MA_FALSE);
     sounds_[name] = std::move(snd);
     return true;
 }
