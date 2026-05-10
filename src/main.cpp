@@ -699,6 +699,19 @@ int main() {
         float voiceIntroDelay   = -1.0f;  // < 0 = idle / already played
         float voiceChatterTimer = -1.0f;  // < 0 = idle, set on Play start
 
+        // Drop-in cutscene state. While active, the player has no input, the
+        // wave manager is paused, the weapon won't fire, and the camera is
+        // overridden frame-by-frame to follow the scripted timeline below.
+        bool  cutsceneActive    = false;
+        float cutsceneTime      = 0.0f;
+        bool  cutsceneCatSpawned = false;
+        bool  cutsceneLanded    = false;
+        constexpr float kCutFallEnd     = 1.4f;   // hits the ground here
+        constexpr float kCutSettleEnd   = 1.8f;   // brief pause after landing
+        constexpr float kCutTiltLeftEnd = 2.8f;   // 1 s arc, peaks at 2.3 s
+        constexpr float kCutTiltRightEnd = 3.8f;  // 1 s arc, peaks at 3.3 s
+        constexpr float kCutMaxLength   = 14.0f;  // hard timeout — never strand the player
+
         float ringCooldown = 0.0f;
 
         // Achievement-style loot toast: each chest opening grants the item
@@ -925,6 +938,96 @@ int main() {
                     audio.stop("intro_voice");  // skip remaining briefing
                     voiceIntroDelay   = 3.0f;
                     voiceChatterTimer = 25.0f + game::rand01() * 25.0f;  // first chatter in 25..50 s
+                    cutsceneActive     = true;
+                    cutsceneTime       = 0.0f;
+                    cutsceneCatSpawned = false;
+                    cutsceneLanded     = false;
+                }
+            } else if (scene == game::Scene::Playing && cutsceneActive) {
+                // Drop-in cutscene: scripted camera over a frozen player
+                // capsule. Skips player input, weapon firing, level-up
+                // gating; the wave manager block below also short-circuits
+                // when cutsceneActive is true so antidotes don't spawn yet.
+                cutsceneTime += dt;
+
+                const float groundY  = terrain.heightAt(0.0f, 3.0f);
+                const float headY    = groundY + player.feel().headHeight;
+                constexpr float kPi  = 3.14159265358979f;
+
+                // Phase 1: fall from the sky onto the spawn point.
+                if (cutsceneTime < kCutFallEnd) {
+                    const float t    = cutsceneTime / kCutFallEnd;
+                    const float ease = 1.0f - (1.0f - t) * (1.0f - t);  // easeOut
+                    const float startY = headY + 32.0f;
+                    player.camera().position = glm::vec3(0.0f,
+                                                          glm::mix(startY, headY, ease),
+                                                          3.0f);
+                    player.camera().yaw   = -90.0f;
+                    player.camera().pitch = -25.0f;  // looking at the ground rushing up
+                }
+                // Phase 2: settle pause + impact shake on the first frame.
+                else if (cutsceneTime < kCutSettleEnd) {
+                    if (!cutsceneLanded) {
+                        cutsceneLanded = true;
+                        player.addTrauma(0.9f);
+                    }
+                    player.camera().position = glm::vec3(0.0f, headY, 3.0f);
+                    player.camera().yaw   = -90.0f;
+                    player.camera().pitch = -10.0f;  // half-stand from crouch
+                }
+                // Phase 3: tilt left and back. -90 -> -150 -> -90 over 1 s.
+                else if (cutsceneTime < kCutTiltLeftEnd) {
+                    const float u = (cutsceneTime - kCutSettleEnd)
+                                  / (kCutTiltLeftEnd - kCutSettleEnd);
+                    const float yaw = -90.0f - 60.0f * std::sin(u * kPi);
+                    player.camera().position = glm::vec3(0.0f, headY, 3.0f);
+                    player.camera().yaw   = yaw;
+                    player.camera().pitch = 0.0f;
+                }
+                // Phase 4: tilt right and back. -90 -> -30 -> -90 over 1 s.
+                else if (cutsceneTime < kCutTiltRightEnd) {
+                    const float u = (cutsceneTime - kCutTiltLeftEnd)
+                                  / (kCutTiltRightEnd - kCutTiltLeftEnd);
+                    const float yaw = -90.0f + 60.0f * std::sin(u * kPi);
+                    player.camera().position = glm::vec3(0.0f, headY, 3.0f);
+                    player.camera().yaw   = yaw;
+                    player.camera().pitch = 0.0f;
+                }
+                // Phase 5: spawn the cat in front of the player and wait
+                // for it to enter aggro range — the trigger that hands
+                // control back.
+                else {
+                    player.camera().position = glm::vec3(0.0f, headY, 3.0f);
+                    player.camera().yaw   = -90.0f;
+                    player.camera().pitch = 0.0f;
+
+                    if (!cutsceneCatSpawned) {
+                        const int catIdx = spawner.findDefIndex("Cat");
+                        if (catIdx >= 0) {
+                            spawner.spawnAtIndex(enemies,
+                                                 glm::vec3(0.0f, 0.0f, -18.0f),
+                                                 catIdx);
+                        }
+                        cutsceneCatSpawned = true;
+                    }
+
+                    // End cutscene the moment any cat enters its aggro
+                    // range (also a hard timeout so the player isn't
+                    // stuck if the cat got blocked somehow).
+                    bool catInAggro = false;
+                    for (const auto& e : enemies) {
+                        if (!e.alive() || !e.def) continue;
+                        if (!e.def->aggroAnim) continue;  // only "aggressive" defs
+                        const float dx = e.position.x - player.position().x;
+                        const float dz = e.position.z - player.position().z;
+                        const float r  = e.def->aggroRange;
+                        if (dx * dx + dz * dz < r * r) { catInAggro = true; break; }
+                    }
+                    if (catInAggro || cutsceneTime > kCutMaxLength) {
+                        cutsceneActive = false;
+                        player.camera().yaw   = -90.0f;
+                        player.camera().pitch = 0.0f;
+                    }
                 }
             } else if (scene == game::Scene::Playing) {
                 // Trigger level-up menu if pending.
@@ -1112,7 +1215,7 @@ int main() {
             // Spawn + advance enemies (also gated by Playing scene).
             // WaveManager owns scheduling now; falls back to the legacy spawner
             // tick only if no waves were loaded.
-            if (waveManager.totalWaves() > 0) {
+            if (waveManager.totalWaves() > 0 && !cutsceneActive) {
                 // Refresh the difficulty multiplier each frame so groups that
                 // spawn later in a wave reflect any items the player just
                 // grabbed mid-fight.
@@ -1206,7 +1309,7 @@ int main() {
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                     input.resetMouseDelta();
                 }
-            } else {
+            } else if (!cutsceneActive) {
                 spawner.update(dt, enemies, player.position());
             }
 
@@ -1362,6 +1465,7 @@ int main() {
             // Enemy contact damage. XZ distance check + per-enemy cooldown so
             // a clustered swarm can't burst the player in one frame.
             for (auto& e : enemies) {
+                if (cutsceneActive) break;  // no damage during the drop-in
                 if (!e.alive() || !e.def) continue;
                 if (e.attackCooldown > 0.0f) continue;
                 const glm::vec3 d = e.position - player.position();
@@ -1967,6 +2071,10 @@ int main() {
                     waveAnnounceTimer      = 0.0f;
                     voiceIntroDelay        = 3.0f;
                     voiceChatterTimer      = 25.0f + game::rand01() * 25.0f;
+                    cutsceneActive         = true;
+                    cutsceneTime           = 0.0f;
+                    cutsceneCatSpawned     = false;
+                    cutsceneLanded         = false;
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
@@ -2000,6 +2108,10 @@ int main() {
                     waveAnnounceTimer      = 0.0f;
                     voiceIntroDelay        = 3.0f;
                     voiceChatterTimer      = 25.0f + game::rand01() * 25.0f;
+                    cutsceneActive         = true;
+                    cutsceneTime           = 0.0f;
+                    cutsceneCatSpawned     = false;
+                    cutsceneLanded         = false;
                     projectiles.clear();
                     lootToasts.clear();
                     orbitalCooldowns.clear();
