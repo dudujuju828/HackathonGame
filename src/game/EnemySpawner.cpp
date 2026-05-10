@@ -51,7 +51,9 @@ void EnemySpawner::spawnAt(std::vector<Enemy>& enemies, const glm::vec3& at) {
 
 void EnemySpawner::spawnAtIndex(std::vector<Enemy>& enemies, const glm::vec3& at, int defIndex) {
     if (!defs_ || defIndex < 0 || defIndex >= defCount_) return;
+    static uint32_t s_nextEnemyId = 1;  // 0 reserved for "unassigned"
     Enemy e;
+    e.id       = s_nextEnemyId++;
     e.position = glm::vec3(at.x, 0.0f, at.z);
     e.def = &defs_[defIndex];
     // Scale base HP by the spawner's multiplier so wave totals track player power.

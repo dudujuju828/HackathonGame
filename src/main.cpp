@@ -1052,10 +1052,12 @@ int main() {
                 }
             }
 
-            // Advance and cull projectiles.
+            // Advance and cull projectiles. Stuck syringes don't integrate
+            // velocity — their position is driven each frame from the host
+            // enemy after the enemy update pass.
             for (auto& p : projectiles) {
-                p.position += p.velocity * dt;
-                p.age      += dt;
+                if (!p.stuck()) p.position += p.velocity * dt;
+                p.age += dt;
             }
             // Sticky projectiles (hail) snap to the terrain on first contact
             // and freeze in place. Their existing maxAge keeps them visible
@@ -1246,6 +1248,22 @@ int main() {
                 e.animator.update(dt);
                 if (e.def->model->skeleton()) {
                     e.animator.calculateBoneTransforms(&e.def->model->skeleton().value());
+                }
+            }
+
+            // Stuck syringes follow their host enemy. Linear scan keyed by
+            // enemy id is fine — both lists are small. If the host has been
+            // culled (death animation finished) the projectile keeps its
+            // last position and ages out normally.
+            if (!projectiles.empty() && !enemies.empty()) {
+                for (auto& p : projectiles) {
+                    if (!p.stuck()) continue;
+                    for (const auto& e : enemies) {
+                        if (e.id == p.stuckEnemyId) {
+                            p.position = e.position + p.stuckOffset;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -1537,6 +1555,7 @@ int main() {
 
             for (auto& p : projectiles) {
                 if (!p.alive()) continue;
+                if (p.stuck())  continue;  // already embedded in an enemy
                 for (auto& e : enemies) {
                     if (!e.alive()) continue;
                     float hitRadius = e.def ? e.def->radius : game::kEnemyRadius;
@@ -1544,7 +1563,17 @@ int main() {
                         e.hp -= 1;
                         const glm::vec3 impact = p.position;
                         const int explosiveDmg = p.explosiveDamage;
-                        p.age = p.maxAge;          // mark projectile for cull
+                        // Embed the syringe in the enemy. Velocity is
+                        // preserved so the projectile draw pass keeps
+                        // orienting the model along the way it came in;
+                        // the stuck-follow loop drives position from now
+                        // on. Origin at the impact point puts the model's
+                        // tip just inside the enemy and the body sticks
+                        // out behind (along reverse-velocity).
+                        p.stuckEnemyId = e.id;
+                        p.stuckOffset  = impact - e.position;
+                        p.age          = 0.0f;
+                        p.maxAge       = 4.0f;     // linger time once embedded
                         if (!e.alive()) {
                             onEnemyKilled(e);
                         }

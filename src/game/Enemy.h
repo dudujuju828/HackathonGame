@@ -3,6 +3,7 @@
 #include "EnemyDef.h"
 #include "render/Animator.h"
 #include <glm/glm.hpp>
+#include <cstdint>
 
 namespace game {
 
@@ -15,6 +16,10 @@ constexpr int   kEnemyMaxHp      = 2;
 constexpr int   kEnemyXpReward   = 30;
 
 struct Enemy {
+    // Stable identity for the lifetime of this enemy instance — used by
+    // stuck projectiles (and anything else that wants to track a specific
+    // enemy across vector reallocations). 0 means "unassigned".
+    uint32_t  id       = 0;
     glm::vec3 position { 0.0f };
     glm::vec3 velocity { 0.0f };
     int       hp       = kEnemyMaxHp;
