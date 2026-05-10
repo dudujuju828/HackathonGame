@@ -255,6 +255,8 @@ int main() {
         audio.loadSound("footsteps", "assets/audio/footsteps_crunch.mp3", /*looping=*/true);
         audio.loadSound("ambient",   "assets/audio/ambient_static.mp3",   /*looping=*/true);
         audio.loadSound("ambient2",  "assets/audio/ambient_layer.mp3",    /*looping=*/true);
+        audio.loadSound("level_up",       "assets/audio/level_up.mp3",       /*looping=*/false);
+        audio.loadSound("upgrade_select", "assets/audio/upgrade_select.mp3", /*looping=*/false);
         // Bias the static a touch higher than the source recording so the
         // crackle reads as signal interference rather than rumble.
         audio.setPitch ("ambient",  1.25f);
@@ -901,6 +903,7 @@ int main() {
                     glfwSetInputMode(window.handle(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                     input.resetMouseDelta();
                     levelUpMenu.reset();
+                    audio.play("level_up");
                 } else {
                     float gh = terrain.heightAt(player.position().x, player.position().z);
                     player.update(dt, input, time.total(), gh);
@@ -963,6 +966,7 @@ int main() {
                             break;
                         default: break;
                     }
+                    audio.play("upgrade_select");
                     player.consumeLevelUp();
                     if (player.pendingLevelUps() == 0) {
                         scene = game::Scene::Playing;
@@ -970,6 +974,7 @@ int main() {
                         input.resetMouseDelta();
                     } else {
                         levelUpMenu.reset(); // Pick next set of options for subsequent level
+                        audio.play("level_up");  // chained level-up: re-fire the cue
                     }
                 }
             } else if (scene == game::Scene::Journal) {
