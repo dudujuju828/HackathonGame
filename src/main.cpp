@@ -706,10 +706,10 @@ int main() {
         float cutsceneTime      = 0.0f;
         bool  cutsceneCatSpawned = false;
         bool  cutsceneLanded    = false;
-        constexpr float kCutFallEnd     = 1.4f;   // hits the ground here
-        constexpr float kCutSettleEnd   = 1.8f;   // brief pause after landing
-        constexpr float kCutTiltLeftEnd = 2.8f;   // 1 s arc, peaks at 2.3 s
-        constexpr float kCutTiltRightEnd = 3.8f;  // 1 s arc, peaks at 3.3 s
+        constexpr float kCutFallEnd     = 1.75f;  // hits the ground here
+        constexpr float kCutSettleEnd   = 2.30f;  // brief pause + landing bounce
+        constexpr float kCutTiltLeftEnd = 3.30f;  // 1 s arc, peaks at 2.8 s
+        constexpr float kCutTiltRightEnd = 4.30f; // 1 s arc, peaks at 3.8 s
         constexpr float kCutMaxLength   = 14.0f;  // hard timeout — never strand the player
 
         float ringCooldown = 0.0f;
@@ -955,25 +955,52 @@ int main() {
                 constexpr float kPi  = 3.14159265358979f;
 
                 // Phase 1: fall from the sky onto the spawn point.
+                // Constant-accel motion (t² progress) so the fall reads as
+                // gravity rather than the previous easeOut deceleration.
+                // Pitch tilts further down as speed builds, FOV pumps for
+                // a sense of motion, and a small jitter on the camera-shake
+                // channels sells the wind buffeting.
                 if (cutsceneTime < kCutFallEnd) {
                     const float t    = cutsceneTime / kCutFallEnd;
-                    const float ease = 1.0f - (1.0f - t) * (1.0f - t);  // easeOut
-                    const float startY = headY + 32.0f;
+                    const float ease = t * t;
+                    const float startY = headY + 36.0f;
                     player.camera().position = glm::vec3(0.0f,
                                                           glm::mix(startY, headY, ease),
                                                           3.0f);
                     player.camera().yaw   = -90.0f;
-                    player.camera().pitch = -25.0f;  // looking at the ground rushing up
+                    player.camera().pitch = glm::mix(-5.0f, -55.0f, ease);
+                    player.camera().fovDeg += 14.0f * ease;
+                    // Wind buffeting: small high-freq wobble that grows
+                    // with speed. Re-uses the trauma-shake channels which
+                    // are already clear during the cutscene.
+                    const float wob = ease * 0.6f;
+                    const float wt  = cutsceneTime;
+                    player.camera().viewShakeYaw   =
+                        std::sin(wt * 47.0f) * wob;
+                    player.camera().viewShakePitch =
+                        std::cos(wt * 53.0f) * wob * 0.8f;
                 }
-                // Phase 2: settle pause + impact shake on the first frame.
+                // Phase 2: hard land + a single crouch-bounce in y so the
+                // weight of the impact reads. FOV decays back to base over
+                // the settle window; pitch eases from end-of-fall to a
+                // looking-around resting angle.
                 else if (cutsceneTime < kCutSettleEnd) {
                     if (!cutsceneLanded) {
                         cutsceneLanded = true;
-                        player.addTrauma(0.9f);
+                        player.addTrauma(1.1f);
                     }
-                    player.camera().position = glm::vec3(0.0f, headY, 3.0f);
+                    const float settleT =
+                        (cutsceneTime - kCutFallEnd)
+                        / (kCutSettleEnd - kCutFallEnd);
+                    const float bounce =
+                        std::sin(settleT * kPi) * 0.35f * (1.0f - settleT);
+                    const float fovDecay = std::max(0.0f, 1.0f - settleT * 1.4f);
+                    player.camera().position = glm::vec3(0.0f, headY - bounce, 3.0f);
                     player.camera().yaw   = -90.0f;
-                    player.camera().pitch = -10.0f;  // half-stand from crouch
+                    player.camera().pitch = glm::mix(-45.0f, -10.0f, settleT);
+                    player.camera().fovDeg += 10.0f * fovDecay;
+                    player.camera().viewShakeYaw   = 0.0f;
+                    player.camera().viewShakePitch = 0.0f;
                 }
                 // Phase 3: tilt left and back. -90 -> -150 -> -90 over 1 s.
                 else if (cutsceneTime < kCutTiltLeftEnd) {
