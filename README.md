@@ -260,4 +260,4 @@ What's intentionally out:
   auras and lantern halos are billboarded additive discs, not real lights.
 - AABB level / wall geometry.
 - Networking, savegames, controller input.
-- New asset pipelines beyond GLB / PNG / HDR.
+- New asset pipelines beyond GLB / PNG / HDR. 
